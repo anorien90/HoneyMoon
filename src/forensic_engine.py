@@ -5,6 +5,7 @@ import requests
 import whois
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
+import logging
 from sqlalchemy import create_engine, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
@@ -57,17 +58,24 @@ class ForensicEngine:
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
         if str(db_path).startswith("sqlite"):
+            sqlite_timeout_seconds = 30
+            sqlite_timeout_ms = int(sqlite_timeout_seconds * 1000)
             self.engine = create_engine(
                 db_path,
                 echo=False,
-                connect_args={"check_same_thread": False, "timeout": 30}
+                connect_args={"check_same_thread": False, "timeout": sqlite_timeout_seconds}
             )
             try:
                 with self.engine.connect() as conn:
-                    conn.execute(text("PRAGMA journal_mode=WAL;"))
-                    conn.execute(text("PRAGMA busy_timeout=30000;"))
+                    conn.execute(text(f"PRAGMA busy_timeout={sqlite_timeout_ms};"))
+                    mode = conn.execute(text("PRAGMA journal_mode;")).scalar()
+                    if not mode or str(mode).lower() != "wal":
+                        conn.execute(text("PRAGMA journal_mode=WAL;"))
             except SQLAlchemyError as e:
-                print(f"SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): {e}")
+                logging.warning(
+                    "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
+                    e,
+                )
         else:
             self.engine = create_engine(db_path, echo=False)
 
