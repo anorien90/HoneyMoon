@@ -28,7 +28,8 @@ def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str
     if env_value is not None:
         candidate = os.path.abspath(env_value)
         try:
-            if os.path.commonpath([BASE_DIR, candidate]) != BASE_DIR:
+            common = os.path.commonpath([BASE_DIR, candidate])
+            if common != BASE_DIR or not candidate.startswith(BASE_DIR + os.sep):
                 logger.warning("%s path is outside the application directory; falling back to defaults", label)
                 return fallback
         except ValueError:
@@ -36,8 +37,7 @@ def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str
             return fallback
         if os.path.isdir(candidate):
             return candidate
-        sanitized = os.path.relpath(candidate, BASE_DIR)
-        logger.warning("%s path '%s' is invalid or inaccessible; falling back to defaults", label, sanitized)
+        logger.warning("%s path is invalid or inaccessible; falling back to defaults", label)
     return fallback
 
 env_templates = os.environ.get("IPMAP_TEMPLATES")
