@@ -62,7 +62,7 @@ class ForensicEngine:
         if db_url_lower.startswith("sqlite:"):
             env_timeout = os.environ.get("SQLITE_BUSY_TIMEOUT_SECONDS", "30")
             try:
-                sqlite_timeout_seconds = float(env_timeout if env_timeout not in (None, "") else 30.0)
+                sqlite_timeout_seconds = float(env_timeout) if env_timeout else 30.0
             except ValueError:
                 sqlite_timeout_seconds = 30.0
             sqlite_timeout_ms = int(sqlite_timeout_seconds * 1000)
@@ -73,8 +73,8 @@ class ForensicEngine:
             )
             try:
                 with self.engine.begin() as conn:
-                    conn.execute(text("PRAGMA busy_timeout=:timeout"), {"timeout": sqlite_timeout_ms})
-                    conn.execute(text("PRAGMA journal_mode=:mode"), {"mode": "WAL"})
+                    conn.execute(text(f"PRAGMA busy_timeout={sqlite_timeout_ms}"))
+                    conn.execute(text("PRAGMA journal_mode=WAL"))
             except SQLAlchemyError as e:
                 logging.warning(
                     "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
