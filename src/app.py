@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import Optional
 from flask import Flask, request, jsonify, render_template, send_file
 from src.forensic_engine import ForensicEngine
@@ -21,16 +22,19 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 DEFAULT_STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-def _resolve_path(env_value: Optional[str], fallback: str) -> str:
-    if env_value is not None and os.path.isdir(env_value):
-        return env_value
+def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str:
+    if env_value is not None:
+        candidate = os.path.abspath(env_value)
+        if os.path.isdir(candidate):
+            return candidate
+        logging.warning("%s path '%s' is invalid or inaccessible; falling back to '%s'", label, candidate, fallback)
     return fallback
 
 env_templates = os.environ.get("IPMAP_TEMPLATES")
 env_static = os.environ.get("IPMAP_STATIC")
 
-TEMPLATE_DIR = _resolve_path(env_templates, DEFAULT_TEMPLATE_DIR)
-STATIC_DIR = _resolve_path(env_static, DEFAULT_STATIC_DIR)
+TEMPLATE_DIR = _resolve_path(env_templates, DEFAULT_TEMPLATE_DIR, label="Template")
+STATIC_DIR = _resolve_path(env_static, DEFAULT_STATIC_DIR, label="Static")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 
