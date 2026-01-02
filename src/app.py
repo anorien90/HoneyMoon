@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from flask import Flask, request, jsonify, render_template, send_file
 from src.forensic_engine import ForensicEngine
 
@@ -20,8 +21,10 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 DEFAULT_STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-def _resolve_path(env_value: str, fallback: str) -> str:
-    return env_value if env_value and os.path.isdir(env_value) else fallback
+def _resolve_path(env_value: Optional[str], fallback: str) -> str:
+    if env_value is not None and os.path.isdir(env_value):
+        return env_value
+    return fallback
 
 env_templates = os.environ.get("IPMAP_TEMPLATES")
 env_static = os.environ.get("IPMAP_STATIC")
