@@ -391,21 +391,22 @@ class ForensicEngine:
     # -------------------------
     # Organization creation/refresh
     # -------------------------
-    def get_or_create_organization(self, name, rdap=None):
+    def get_or_create_organization(self, name, rdap=None, session=None):
+        session = session or self.db
         if not name:
             return None
         norm = name.strip().lower()
         if not norm:
             return None
 
-        org = self.db.query(Organization).filter_by(name_normalized=norm).first()
+        org = session.query(Organization).filter_by(name_normalized=norm).first()
         if org:
             if rdap and (not org.rdap or org.rdap == {}):
                 org.rdap = rdap
                 try:
-                    self.db.commit()
+                    session.commit()
                 except Exception:
-                    self.db.rollback()
+                    session.rollback()
             # try to enrich if missing
             try:
                 extra = org.extra_data or {}
@@ -415,12 +416,12 @@ class ForensicEngine:
                         extra['company_search'] = registry
                         org.extra_data = extra
                         try:
-                            self.db.commit()
+                            session.commit()
                         except Exception:
-                            self.db.rollback()
+                            session.rollback()
             except Exception:
                 try:
-                    self.db.rollback()
+                    session.rollback()
                 except Exception:
                     pass
             return org
@@ -434,12 +435,12 @@ class ForensicEngine:
         except Exception:
             pass
 
-        self.db.add(org)
+        session.add(org)
         try:
-            self.db.commit()
+            session.commit()
         except Exception:
-            self.db.rollback()
-            org = self.db.query(Organization).filter_by(name_normalized=norm).first()
+            session.rollback()
+            org = session.query(Organization).filter_by(name_normalized=norm).first()
         return org
 
     def refresh_organization(self, identifier, force=True):
@@ -507,11 +508,12 @@ class ForensicEngine:
     # -------------------------
     # Node / IP enrichment and other existing methods
     # -------------------------
-    def get_node_from_db_or_web(self, ip):
+    def get_node_from_db_or_web(self, ip, session=None):
+        session = session or self.db
         if not ip:
             return None
 
-        node = self.db.query(NetworkNode).filter_by(ip=ip).first()
+        node = session.query(NetworkNode).filter_by(ip=ip).first()
 
         needs_refresh = False
         if not node:
@@ -531,12 +533,12 @@ class ForensicEngine:
                 node = NetworkNode(ip=ip)
                 node.first_seen = datetime.now(timezone.utc)
                 node.seen_count = 0
-                self.db.add(node)
-                self.db.flush()
+                session.add(node)
+                session.flush()
 
             org_name = intel.get('organization') or (intel.get('rdap') or {}).get('org_full_name')
             if org_name:
-                org = self.get_or_create_organization(org_name, rdap=intel.get('rdap'))
+                org = self.get_or_create_organization(org_name, rdap=intel.get('rdap'), session=session)
                 if org:
                     node.organization_id = org.id
                     node.organization = org.name
@@ -553,27 +555,28 @@ class ForensicEngine:
             node.last_seen = datetime.now(timezone.utc)
             node.seen_count = (node.seen_count or 0) + 1
 
-            self.db.commit()
+            session.commit()
         else:
             node.last_seen = datetime.now(timezone.utc)
             node.seen_count = (node.seen_count or 0) + 1
-            self.db.commit()
+            session.commit()
 
         return node
 
-    def ensure_node_minimal(self, ip, seen_time=None):
+    def ensure_node_minimal(self, ip, seen_time=None, session=None):
+        session = session or self.db
         if not ip:
             return None
-        node = self.db.query(NetworkNode).filter_by(ip=ip).first()
+        node = session.query(NetworkNode).filter_by(ip=ip).first()
         now = seen_time or datetime.now(timezone.utc)
         if not node:
             node = NetworkNode(ip=ip, first_seen=now, last_seen=now, seen_count=1)
-            self.db.add(node)
-            self.db.flush()
+            session.add(node)
+            session.flush()
         else:
             node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
-            self.db.flush()
+            session.flush()
         return node
 
     def get_passive_intel(self, ip):
@@ -786,7 +789,7 @@ class ForensicEngine:
 
         if wa.remote_addr:
             try:
-                node = self.get_node_from_db_or_web(wa.remote_addr) if enrich else self.ensure_node_minimal(wa.remote_addr, seen_time=ts)
+                node = self.get_node_from_db_or_web(wa.remote_addr, session=session) if enrich else self.ensure_node_minimal(wa.remote_addr, seen_time=ts, session=session)
                 if node:
                     wa.node = node
             except Exception:
