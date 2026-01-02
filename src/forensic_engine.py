@@ -14,7 +14,7 @@ import time
 import traceback
 try:
     import maxminddb  # type: ignore
-except Exception:
+except ImportError:
     maxminddb = None
 
 # scapy imports (used for traceroute and optional pcap ingest)
@@ -52,7 +52,7 @@ def _sha256_text(s: str) -> str:
 
 
 class ForensicEngine:
-    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True):
+    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True):
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
         self.engine = create_engine(db_path, echo=False)
@@ -78,7 +78,7 @@ class ForensicEngine:
         self.db = self.Session()
 
         # GeoLite database (preferred) configuration
-        self.geolite_path = os.path.abspath(os.environ.get("GEOLITE_MMDB_PATH", os.path.join(os.path.abspath(os.getcwd()), "data", "GeoLite2-City.mmdb")))
+        self.geolite_path = os.path.abspath(os.environ.get("GEOLITE_MMDB_PATH", os.path.join(os.getcwd(), "data", "GeoLite2-City.mmdb")))
         self.geolite_url = os.environ.get("GEOLITE_MMDB_URL", "https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-City.mmdb")
         self._geolite_reader = None
         if maxminddb:
@@ -87,12 +87,16 @@ class ForensicEngine:
             print("maxminddb module not available; GeoLite lookups disabled.")
 
         # Automatic honeypot ingestion configuration
-        self.honey_auto_ingest = os.environ.get("HONEY_AUTO_INGEST", str(honey_auto_ingest)).lower() in ("1", "true", "yes", "on", True)
+        honey_flag = os.environ.get("HONEY_AUTO_INGEST", honey_auto_ingest)
+        if isinstance(honey_flag, bool):
+            self.honey_auto_ingest = honey_flag
+        else:
+            self.honey_auto_ingest = str(honey_flag).lower() in ("1", "true", "yes", "on")
         self.honey_log_path = os.environ.get("HONEY_LOG_PATH", os.path.join(self.honeypot_data_dir, "log", "cowrie.json"))
         print(f"Honeypot auto-ingest: {self.honey_auto_ingest}, log path: {self.honey_log_path}")
         try:
             self.honey_ingest_interval = int(os.environ.get("HONEY_INGEST_INTERVAL", "30"))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             self.honey_ingest_interval = 30
 
         if self.honey_auto_ingest and self.honey_log_path:
@@ -102,12 +106,16 @@ class ForensicEngine:
             print("Started honeypot watcher thread.")
 
         # Automatic nginx access log ingestion configuration
-        self.access_auto_ingest = os.environ.get("NGINX_AUTO_INGEST", "1").lower() in ("1", "true", "yes", "on", True)
-        default_access_path = os.path.join(os.path.abspath(os.getcwd()), "data", "access.json")
+        access_flag = os.environ.get("NGINX_AUTO_INGEST", nginx_auto_ingest)
+        if isinstance(access_flag, bool):
+            self.access_auto_ingest = access_flag
+        else:
+            self.access_auto_ingest = str(access_flag).lower() in ("1", "true", "yes", "on")
+        default_access_path = os.path.join(os.getcwd(), "data", "access.json")
         self.access_log_path = os.path.abspath(os.environ.get("NGINX_LOG_PATH", default_access_path))
         try:
             self.access_ingest_interval = int(os.environ.get("NGINX_INGEST_INTERVAL", "30"))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             self.access_ingest_interval = 30
         self._nginx_state_path = os.path.abspath(os.environ.get("NGINX_STATE_PATH", os.path.join(os.path.dirname(self.access_log_path), ".nginx_access_state.json")))
 
@@ -156,13 +164,13 @@ class ForensicEngine:
         if not os.path.isfile(path):
             try:
                 self._download_geolite_db(path)
-            except Exception as e:
+            except (requests.RequestException, OSError, RuntimeError) as e:
                 print(f"GeoLite download failed: {e}")
                 return
         try:
             self._geolite_reader = maxminddb.open_database(path, mode=maxminddb.MODE_AUTO)
             print(f"Loaded GeoLite database from {path}")
-        except Exception as e:
+        except (OSError, ValueError) as e:
             self._geolite_reader = None
             print(f"GeoLite open failed: {e}")
 
@@ -170,9 +178,10 @@ class ForensicEngine:
         url = self.geolite_url
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-        except Exception:
-            pass
-        resp = requests.get(url, timeout=20)
+        except OSError as e:
+            print(f"Failed to create GeoLite directory: {e}")
+            raise
+        resp = requests.get(url, timeout=20, verify=True)
         if resp.status_code != 200:
             raise RuntimeError(f"GeoLite download HTTP {resp.status_code}")
         with open(path, "wb") as fh:
@@ -183,7 +192,8 @@ class ForensicEngine:
             return None
         try:
             data = self._geolite_reader.get(ip)
-        except Exception:
+        except (ValueError, OSError, AttributeError) as e:
+            print(f"GeoLite lookup failed for {ip}: {e}")
             return None
         if not data:
             return None
@@ -638,8 +648,8 @@ class ForensicEngine:
             geo = self._geolite_lookup(ip)
             if geo:
                 return geo
-        except Exception:
-            pass
+        except (ValueError, OSError, AttributeError) as e:
+            print(f"GeoLite lookup error for {ip}: {e}")
         try:
             res = requests.get(f"http://ip-api.com/json/{ip}", timeout=3).json()
             if res.get("status") == "success":
@@ -1077,8 +1087,10 @@ class ForensicEngine:
 
                 with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
                     fh.seek(offset)
-                    new_lines = fh.readlines()
-                    for line in new_lines:
+                    while True:
+                        line = fh.readline()
+                        if not line:
+                            break
                         line = line.strip()
                         offset = fh.tell()
                         if not line:
