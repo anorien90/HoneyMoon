@@ -121,12 +121,12 @@ export function escapeHtml(str) {
   return str.replace(/[&<>"']/g, m => escapeMap[m]);
 }
 
-function truncate(str = '', len = 80) {
+export function truncate(str = '', len = 80) {
   if (str.length <= len) return str;
   return str.slice(0, len - 1) + '…';
 }
 
-function summarizeNodeDetails(node = {}) {
+export function summarizeNodeDetails(node = {}) {
   const extra = node.extra_data || {};
   const fp = extra.fingerprints || {};
 

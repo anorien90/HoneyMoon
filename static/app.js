@@ -19,42 +19,7 @@ const state = {
 };
 
 const escapeHtml = ui.escapeHtml;
-
-function truncate(str = '', len = 80) {
-  if (str.length <= len) return str;
-  return `${str.slice(0, len - 1)}…`;
-}
-
-function summarizeNode(node = {}) {
-  const extra = node.extra_data || {};
-  const fp = extra.fingerprints || {};
-
-  const bannerPorts = extra.banners && Object.keys(extra.banners).length
-    ? Object.entries(extra.banners).slice(0, 5).map(([p, b]) => `${p}${b ? ` (${truncate(String(b), 40)})` : ''}`).join(', ')
-    : '';
-  const nmapServices = fp.nmap && fp.nmap.services && Object.keys(fp.nmap.services).length
-    ? Object.entries(fp.nmap.services).slice(0, 5).map(([p, info]) => {
-      const svc = info?.name || info?.product || info?._name;
-      return `${p}${svc ? ` ${svc}` : ''}`;
-    }).join(', ')
-    : '';
-
-  const osMatch = Array.isArray(fp.nmap?.osmatch) && fp.nmap.osmatch.length ? fp.nmap.osmatch[0] : null;
-  const httpServer = fp.http?.server || fp.http?.headers?.Server;
-  const cipher = Array.isArray(fp.https?.cipher) ? fp.https.cipher[0] : fp.https?.cipher;
-  const issuer = fp.https?.cert_subject?.commonName || fp.https?.cert_subject?.CN;
-
-  const tags = [];
-  if (node.is_tor_exit) tags.push('TOR exit');
-  if (fp.http_well_known?.['/.git/config']?.status_code === 200) tags.push('Exposed .git');
-
-  return {
-    ports: bannerPorts || nmapServices,
-    os: osMatch ? `${osMatch.name || 'Unknown'}${osMatch.accuracy ? ` (${osMatch.accuracy}%)` : ''}` : '',
-    http: [httpServer, cipher, issuer].filter(Boolean).map(v => truncate(String(v), 60)).join(' • '),
-    tags: tags.join(', ')
-  };
-}
+const summarizeNode = ui.summarizeNodeDetails;
 
 function buildPinnedNodeHtml(node = {}) {
   const summary = summarizeNode(node);
