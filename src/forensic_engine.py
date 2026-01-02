@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import logging
 from sqlalchemy import create_engine, or_, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import sessionmaker
 import json
 import hashlib
@@ -560,7 +560,13 @@ class ForensicEngine:
                 node.first_seen = datetime.now(timezone.utc)
                 node.seen_count = 0
                 session.add(node)
-                session.flush()
+                try:
+                    session.flush()
+                except IntegrityError:
+                    session.rollback()
+                    node = session.query(NetworkNode).filter_by(ip=ip).first()
+                    if not node:
+                        raise
 
             org_name = intel.get('organization') or (intel.get('rdap') or {}).get('org_full_name')
             if org_name:
@@ -598,7 +604,15 @@ class ForensicEngine:
         if not node:
             node = NetworkNode(ip=ip, first_seen=now, last_seen=now, seen_count=1)
             session.add(node)
-            session.flush()
+            try:
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                node = session.query(NetworkNode).filter_by(ip=ip).first()
+                if not node:
+                    return None
+                node.last_seen = now
+                node.seen_count = (node.seen_count or 0) + 1
         else:
             node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
@@ -819,7 +833,10 @@ class ForensicEngine:
                 if node:
                     wa.node = node
             except Exception:
-                pass
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
 
         session.add(wa)
         session.flush()
