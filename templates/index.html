@@ -68,8 +68,20 @@
       <div id="rightZone" class="zone" aria-label="Right sidebar"></div>
     </main>
     
-    <!-- Pinned workspace (from old version) -->
-    <div id="pinnedArea" class="pinned-area workspace" aria-label="Workspace for pinned/floating panels"></div>
+    <!-- Pinned workspace with collapsible header -->
+    <div id="pinnedAreaContainer" class="pinned-area-container">
+      <div class="pinned-area-header" id="pinnedAreaHeader">
+        <div class="pinned-area-title">
+          <span>📌</span>
+          <span>Pinned Cards</span>
+          <span id="pinnedCardCount" class="small muted">(0)</span>
+        </div>
+        <div class="pinned-area-controls">
+          <button id="togglePinnedArea" title="Collapse/Expand" aria-label="Toggle pinned area">▾</button>
+        </div>
+      </div>
+      <div id="pinnedArea" class="pinned-area workspace" aria-label="Workspace for pinned/floating panels"></div>
+    </div>
     
   </div>
   

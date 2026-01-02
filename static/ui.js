@@ -749,6 +749,7 @@ export function addPinnedCard(title, html, opts = {}) {
   pinnedCardCache.set(id, wrapper);
   
   debouncedSavePinnedCards();
+  updatePinnedCardCount();
   return wrapper;
 }
 
@@ -843,9 +844,11 @@ function initPinnedCardEventListeners() {
     if (e.target.closest('.pin-move-left')) {
       e.stopPropagation();
       movePinnedCardToZone(pinnedCard, ZONES.LEFT);
+      updatePinnedCardCount();
     } else if (e.target.closest('.pin-move-right')) {
       e.stopPropagation();
       movePinnedCardToZone(pinnedCard, ZONES.RIGHT);
+      updatePinnedCardCount();
     } else if (e.target.closest('.pin-collapse')) {
       e.stopPropagation();
       pinnedCard.classList.toggle('card-collapsed');
@@ -856,6 +859,7 @@ function initPinnedCardEventListeners() {
       pinnedCard.remove();
       debouncedSavePinnedCards();
       dispatchLayoutEvent();
+      updatePinnedCardCount();
     } else if (e.target.closest('.pin-dock')) {
       e.stopPropagation();
       togglePinnedCardDock(pinnedCard);
@@ -1128,6 +1132,7 @@ export function restorePinnedCards(mode = null) {
   states.forEach(state => {
     addPinnedCard(state.title || 'Pinned', state.html || '', { state });
   });
+  updatePinnedCardCount();
 }
 
 export function closeAllPinnedCards() {
@@ -1143,6 +1148,7 @@ export function closeAllPinnedCards() {
   } catch (e) {
     console.error('Failed to clear pinned cards:', e);
   }
+  updatePinnedCardCount();
 }
 
 // ============================================
@@ -1151,7 +1157,7 @@ export function closeAllPinnedCards() {
 
 let previousActiveElement = null;
 
-export function showModal({ title = '', html = '', text = '', allowPin = false, onPin = null } = {}) {
+export function showModal({ title = '', html = '', text = '', allowPin = false, allowPinToSidebar = false, onPin = null, onPinLeft = null, onPinRight = null } = {}) {
   const container = $('modalContainer');
   if (!container) return;
   
@@ -1168,11 +1174,23 @@ export function showModal({ title = '', html = '', text = '', allowPin = false, 
   modal.setAttribute('aria-modal', 'true');
   modal.setAttribute('tabindex', '-1');
   
+  // Build pin buttons based on options
+  let pinButtons = '';
+  if (allowPinToSidebar) {
+    pinButtons = `
+      <button id="modalPinLeftBtn" class="modal-btn" title="Pin to left sidebar">◀ Left</button>
+      <button id="modalPinRightBtn" class="modal-btn" title="Pin to right sidebar">▶ Right</button>
+      <button id="modalPinBtn" class="modal-btn" title="Pin to workspace">📌 Pin</button>
+    `;
+  } else if (allowPin) {
+    pinButtons = '<button id="modalPinBtn" class="modal-btn">📌 Pin</button>';
+  }
+  
   modal.innerHTML = `
     <div class="modal-header">
       <h3>${escapeHtml(title)}</h3>
       <div class="modal-controls">
-        ${allowPin ? '<button id="modalPinBtn" class="modal-btn">Pin</button>' : ''}
+        ${pinButtons}
         <button id="modalCloseBtn" class="modal-btn">✕</button>
       </div>
     </div>
@@ -1188,6 +1206,14 @@ export function showModal({ title = '', html = '', text = '', allowPin = false, 
   $('modalCloseBtn')?.addEventListener('click', hideModal);
   $('modalPinBtn')?.addEventListener('click', () => {
     onPin?.();
+    hideModal();
+  });
+  $('modalPinLeftBtn')?.addEventListener('click', () => {
+    onPinLeft?.();
+    hideModal();
+  });
+  $('modalPinRightBtn')?.addEventListener('click', () => {
+    onPinRight?.();
     hideModal();
   });
 
@@ -1351,11 +1377,46 @@ export function addPinnedCardNode(title, node, opts = {}) {
 // MAIN INITIALIZATION
 // ============================================
 
+function initPinnedAreaToggle() {
+  const container = $('pinnedAreaContainer');
+  const header = $('pinnedAreaHeader');
+  const toggleBtn = $('togglePinnedArea');
+  
+  if (!container || !header) return;
+  
+  // Load saved state
+  const isCollapsed = localStorage.getItem('ipExplorer.pinnedArea.collapsed') === '1';
+  if (isCollapsed) {
+    container.classList.add('collapsed');
+    if (toggleBtn) toggleBtn.textContent = '▸';
+  }
+  
+  // Toggle on header click
+  header.addEventListener('click', () => {
+    const nowCollapsed = container.classList.toggle('collapsed');
+    if (toggleBtn) toggleBtn.textContent = nowCollapsed ? '▸' : '▾';
+    localStorage.setItem('ipExplorer.pinnedArea.collapsed', nowCollapsed ? '1' : '0');
+  });
+  
+  // Update count initially
+  updatePinnedCardCount();
+}
+
+export function updatePinnedCardCount() {
+  const countEl = $('pinnedCardCount');
+  const area = $('pinnedArea');
+  if (countEl && area) {
+    const count = area.querySelectorAll('.pinned-card').length;
+    countEl.textContent = `(${count})`;
+  }
+}
+
 export function initUI() {
   renderSearchHistory();
   initPanelEventListeners();
   initPinnedCardEventListeners();
   initFloatButtonListeners();
+  initPinnedAreaToggle();
   initPanels();
   restorePinnedCards();
   
