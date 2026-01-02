@@ -97,7 +97,17 @@ let gridMode = false;
 
 // DOM cache
 const domCache = new Map();
+// Elements that should not be cached because they are dynamically created/destroyed
+const UNCACHED_ELEMENTS = new Set([
+  'modalCloseBtn', 'modalPinBtn', 'modalPinLeftBtn', 'modalPinMiddleBtn', 'modalPinRightBtn',
+  'middleZone'
+]);
+
 function $(id) {
+  // For modal elements and other dynamically created elements, always query the DOM fresh
+  if (UNCACHED_ELEMENTS.has(id)) {
+    return document.getElementById(id);
+  }
   if (!domCache.has(id)) {
     domCache.set(id, document.getElementById(id));
   }
@@ -476,6 +486,11 @@ export function movePanelToZone(key, targetZone) {
   const container = getZoneContainer(targetZone);
   if (!container) return;
   
+  // Ensure the zone is visible when moving panels to it
+  if (container.classList.contains('hidden')) {
+    container.classList.remove('hidden');
+  }
+  
   state.panel.dataset.zone = targetZone;
   state.zone = targetZone;
   container.appendChild(state.panel);
@@ -580,6 +595,11 @@ export function addPanelToZone(title, html, targetZone) {
   if (!container) {
     toast(`Cannot add to ${zone} zone`);
     return null;
+  }
+  
+  // Ensure the zone is visible when adding panels to it
+  if (container.classList.contains('hidden')) {
+    container.classList.remove('hidden');
   }
   
   const id = `custom-panel-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
@@ -851,14 +871,23 @@ function movePinnedCardToZone(pinnedCard, targetZone) {
     return;
   }
   
+  // Ensure the zone is visible when moving pinned cards to it
+  if (targetContainer.classList.contains('hidden')) {
+    targetContainer.classList.remove('hidden');
+  }
+  
   // Convert pinned card to a panel-style card in the target zone
   const title = pinnedCard.querySelector('.pin-header strong')?.textContent || 'Card';
   const bodyContent = pinnedCard.querySelector('.pin-body')?.innerHTML || '';
   
+  // Generate a unique ID for the new panel
+  const panelId = pinnedCard.dataset.pinnedId || genId();
+  
   // Create a new panel-style element for the zone
   const panel = document.createElement('div');
   panel.className = 'panel-card';
-  panel.dataset.panelKey = pinnedCard.dataset.pinnedId || genId();
+  panel.id = panelId;
+  panel.dataset.panelKey = panelId;
   panel.dataset.zone = targetZone;
   panel.style.minWidth = '260px';
   panel.style.minHeight = '150px';
@@ -884,11 +913,25 @@ function movePinnedCardToZone(pinnedCard, targetZone) {
   // Add the panel to the target zone
   targetContainer.appendChild(panel);
   
+  // Store in panel state for proper management (so move buttons work)
+  panelState.set(panelId, {
+    panel,
+    config: {
+      id: panelId,
+      title,
+      icon: '📌',
+      required: false,
+      zone: targetZone
+    },
+    zone: targetZone
+  });
+  
   // Remove the original pinned card
   pinnedCardCache.delete(pinnedCard.dataset.pinnedId);
   pinnedCard.remove();
   
   debouncedSavePinnedCards();
+  savePanelStates();
   dispatchLayoutEvent();
   toast(`Moved to ${getZoneName(targetZone)} zone`);
 }
