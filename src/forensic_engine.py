@@ -64,8 +64,8 @@ class ForensicEngine:
             try:
                 with self.engine.connect() as conn:
                     conn.execute(text("PRAGMA journal_mode=WAL;"))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"SQLite PRAGMA setup failed: {e}")
         else:
             self.engine = create_engine(db_path, echo=False)
 
