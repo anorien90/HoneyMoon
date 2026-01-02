@@ -544,6 +544,13 @@ class ForensicEngine:
         if node and seen_time:
             node.last_seen = seen_time
             node.seen_count = (node.seen_count or 0) + 1
+        elif not node and seen_time:
+            try:
+                node = NetworkNode(ip=ip, first_seen=seen_time, last_seen=seen_time, seen_count=1)
+                session.add(node)
+                session.flush()
+            except IntegrityError:
+                node = None
 
         return node
 
@@ -576,6 +583,7 @@ class ForensicEngine:
                 try:
                     session.flush()
                 except IntegrityError:
+                    logging.warning("IntegrityError creating NetworkNode %s; attempting recovery", ip)
                     node = self._recover_node_on_integrity_error(session, ip)
                     if not node:
                         return None
@@ -619,6 +627,7 @@ class ForensicEngine:
             try:
                 session.flush()
             except IntegrityError:
+                logging.warning("IntegrityError creating minimal NetworkNode %s; attempting recovery", ip)
                 node = self._recover_node_on_integrity_error(session, ip, seen_time=now)
                 if not node:
                     return None
