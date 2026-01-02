@@ -552,16 +552,15 @@ class ForensicEngine:
                 node = NetworkNode(ip=ip, first_seen=seen_time, last_seen=seen_time, seen_count=1)
                 session.add(node)
                 session.flush()
-            except IntegrityError:
+            except IntegrityError as err:
                 logging.warning("IntegrityError during recovery for NetworkNode %s", ip)
                 try:
                     session.rollback()
                 except SQLAlchemyError as e:
                     logging.warning("Rollback failed during recovery IntegrityError for %s: %s", ip, e)
                 node = session.query(NetworkNode).filter_by(ip=ip).first()
-
-        if not node:
-            node = session.query(NetworkNode).filter_by(ip=ip).first()
+                if not node:
+                    raise err
 
         return node
 
