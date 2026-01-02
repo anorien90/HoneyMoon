@@ -3,6 +3,7 @@
 
 import * as honeypotApi from './honeypot.js';
 import * as ui from './ui.js';
+import { escapeHtml } from './util.js';
 
 export async function listHoneypotSessions(limit = 100) {
   ui.setLoading(true, 'Loading honeypot sessions…');
@@ -138,8 +139,6 @@ export async function viewHoneypotSession(id) {
       html,
       allowPin: true,
       allowPinToSidebar: true,
-      sessionData: s,
-      pinnedHtml,
       onPin: () => {
         ui.addPinnedCard(`Honeypot ${s.id}`, pinnedHtml);
       },
@@ -234,10 +233,4 @@ export async function ingestPcapHandler() {
     if (statusEl) statusEl.innerText = 'PCAP ingestion failed';
     console.error('ingestPcapHandler error:', err);
   }
-}
-
-function escapeHtml(str) {
-  return (str || '').replace(/[&<>"']/g, (m) => {
-    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'":  '&#39;' })[m];
-  });
 }
