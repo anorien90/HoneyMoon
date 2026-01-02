@@ -58,7 +58,7 @@ body {
   backdrop-filter: blur(8px);
 }
 
-.app-header . logo {
+.app-header .logo {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -69,9 +69,10 @@ body {
   width: auto;
 }
 
-. app-main {
+.app-main {
   display: grid;
   grid-template-columns: minmax(260px, 320px) 1fr minmax(260px, 320px);
+  flex-direction: row;
   gap: 1rem;
   flex: 1;
   min-height: 0;
@@ -86,7 +87,7 @@ body {
   overflow-x: hidden;
 }
 
-.zone. grid-mode {
+.zone .grid-mode {
   display: grid;
   grid-template-columns: 1fr;
   align-content: start;
@@ -117,7 +118,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0. 75rem;
+  padding: 0.5rem 0.75rem;
   background: var(--glass);
   border-bottom: 1px solid var(--border);
   cursor: default;
@@ -164,7 +165,7 @@ body {
   min-height: 0;
 }
 
-.panel-collapsed . panel-body { display: none; }
+.panel-collapsed .panel-body { display: none; }
 .panel-collapsed { min-height: 36px ! important; }
 
 .panel-collapsed .panel-btn[data-action="collapse"]::after {
@@ -230,19 +231,19 @@ body {
   color: inherit;
 }
 
-. toolbar button:hover {
+.toolbar button:hover {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
 }
 
-.toolbar button. primary {
+.toolbar button .primary {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
 }
 
-.toolbar button. primary:hover {
+.toolbar button .primary:hover {
   filter: brightness(1.1);
 }
 
@@ -280,7 +281,7 @@ body {
   color: white;
 }
 
-. tab-panel { display: none; }
+.tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
 /* Lists and rows */
@@ -344,7 +345,7 @@ input:focus, select:focus {
 }
 
 /* Modal */
-#modalContainer. modal-hidden { display: none; }
+#modalContainer.modal-hidden { display: none; }
 #modalContainer.modal-visible {
   position: fixed;
   inset: 0;
@@ -356,7 +357,7 @@ input:focus, select:focus {
   padding: 1rem;
 }
 
-. modal-card {
+.modal-card {
   width: min(800px, 95vw);
   max-height: 85vh;
   overflow: hidden;
@@ -478,7 +479,7 @@ input:focus, select:focus {
   gap: 0.5rem;
 }
 
-. toast {
+.toast {
   background: #1f2937;
   color: white;
   padding: 0.75rem 1rem;
@@ -501,7 +502,7 @@ input:focus, select:focus {
   gap: 0.5rem;
 }
 
-. spinner {
+.spinner {
   width: 16px;
   height: 16px;
   border: 2px solid var(--border);
@@ -517,7 +518,7 @@ input:focus, select:focus {
 .muted { color: var(--muted); }
 .small { font-size: 0.75rem; }
 .compact-scroll { max-height: 300px; overflow-y: auto; }
-. sr-only {
+.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -544,7 +545,7 @@ input:focus, select:focus {
     overflow-x: auto;
   }
   
-  #leftZone . panel-card,
+  #leftZone .panel-card,
   #rightZone .panel-card {
     min-width: 280px;
     flex: 1 1 280px;

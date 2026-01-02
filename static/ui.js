@@ -6,7 +6,7 @@ import * as mapModule from './map.js';
 // Storage keys
 const STORAGE_KEYS = {
   searchHistory: 'ipExplorer. searchHistory. v2',
-  panels: 'ipExplorer. panels.v2',
+  panels: 'ipExplorer.panels.v2',
   gridMode: 'ipExplorer.gridMode.v2',
   pinned: 'ipExplorer.pinned.v2',
   pinnedGrid: 'ipExplorer.pinned.grid.v2'
@@ -177,7 +177,7 @@ export function renderSearchHistory() {
   if (!searchHistoryEl) return;
   
   try {
-    const arr = JSON. parse(localStorage.getItem(STORAGE_KEYS.searchHistory) || '[]');
+    const arr = JSON.parse(localStorage.getItem(STORAGE_KEYS.searchHistory) || '[]');
     if (! arr.length) {
       searchHistoryEl.innerHTML = '';
       return;
@@ -447,7 +447,7 @@ export function togglePanelCollapse(key) {
 
 function loadPanelState(key) {
   try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEYS. panels) || '{}');
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEYS.panels) || '{}');
     return all[key] || null;
   } catch (e) {
     return null;
@@ -545,7 +545,7 @@ function initPanelEventListeners() {
   
   // Resize handling
   document.addEventListener('mousedown', (e) => {
-    const resizeHandle = e.target.closest('. panel-resize');
+    const resizeHandle = e.target.closest('.panel-resize');
     if (!resizeHandle) return;
     
     const panel = resizeHandle.closest('.panel-card');
@@ -736,7 +736,7 @@ function initPinnedCardEventListeners() {
 
   // Drag handling for pinned cards (free mode)
   document.addEventListener('mousedown', (e) => {
-    const header = e.target.closest('.pinned-card . pin-header');
+    const header = e.target.closest('.pinned-card .pin-header');
     const area = $('pinnedArea');
     const isGrid = area?. classList.contains('grid-mode');
     if (header && ! e.target.closest('.pin-controls') && !isGrid) {
@@ -1146,7 +1146,7 @@ export function loadGridMode() {
 // ============================================
 
 export function enableFloatButtons() {
-  document.querySelectorAll('.card: not([data-floatable])').forEach(card => {
+  document.querySelectorAll('.card:not([data-floatable])').forEach(card => {
     const header = card.querySelector('.card-header');
     if (!header || card.classList.contains('pinned-card')) return;
     

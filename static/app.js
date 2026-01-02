@@ -270,7 +270,7 @@ async function locateAttacker(ip, opts = {}) {
 // ============================================
 
 function initTabs() {
-  const tabBtns = document.querySelectorAll('. tab-btn[data-tab]');
+  const tabBtns = document.querySelectorAll('.tab-btn[data-tab]');
   
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -506,7 +506,7 @@ function initAutoRefresh() {
 // ============================================
 
 function initCardCollapseHandlers() {
-  document.querySelectorAll('. card-toggle').forEach(btn => {
+  document.querySelectorAll('.card-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
       const card = btn. closest('.card');
       if (!card) return;

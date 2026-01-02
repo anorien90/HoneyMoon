@@ -16,8 +16,8 @@ except Exception:
     WebAccess = None
     AnalysisSession = None
 
-TEMPLATE_DIR = os.environ.get("IPMAP_TEMPLATES", "/home/anorien/lib/IPMap/templates")
-STATIC_DIR = os.environ.get("IPMAP_STATIC", "/home/anorien/lib/IPMap/static")
+TEMPLATE_DIR = os.environ.get("IPMAP_TEMPLATES", "/home/anorien/lib/HoneyMoon/templates")
+STATIC_DIR = os.environ.get("IPMAP_STATIC", "/home/anorien/lib/HoneyMoon/static")
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 
 engine = ForensicEngine()
