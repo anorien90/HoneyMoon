@@ -11,6 +11,9 @@ let isInitialized = false;
 const markerPool = [];
 const MAX_POOL_SIZE = 100;
 
+const escapeHtml = (str = '') => str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m] || m));
+const truncate = (str = '', len = 80) => str.length > len ? `${str.slice(0, len - 1)}…` : str;
+
 export function initMap() {
   if (isInitialized) return Promise.resolve();
   
@@ -99,31 +102,66 @@ export function getMarkerCount() {
   return markers.length;
 }
 
+const summarizePorts = (node) => {
+  const banners = node.extra_data?.banners || {};
+  if (Object.keys(banners).length) {
+    return Object.entries(banners).slice(0, 5).map(([p, b]) => `${escapeHtml(String(p))}${b ? ` (${escapeHtml(truncate(String(b), 40))})` : ''}`).join(', ');
+  }
+  const services = node.extra_data?.fingerprints?.nmap?.services || {};
+  if (Object.keys(services).length) {
+    return Object.entries(services).slice(0, 5).map(([p, info]) => {
+      const svc = info?.name || info?.product || info?._name;
+      return `${escapeHtml(String(p))}${svc ? ` ${escapeHtml(truncate(String(svc), 28))}` : ''}`;
+    }).join(', ');
+  }
+  return '';
+};
+
+const summarizeOs = (node) => {
+  const osMatch = Array.isArray(node.extra_data?.fingerprints?.nmap?.osmatch) && node.extra_data.fingerprints.nmap.osmatch.length
+    ? node.extra_data.fingerprints.nmap.osmatch[0]
+    : null;
+  if (!osMatch) return '';
+  return `${escapeHtml(osMatch.name || 'Unknown')}${osMatch.accuracy ? ` (${escapeHtml(String(osMatch.accuracy))}%)` : ''}`;
+};
+
+const summarizeHttp = (node) => {
+  const fp = node.extra_data?.fingerprints || {};
+  const server = fp.http?.server || fp.http?.headers?.Server;
+  const cipher = Array.isArray(fp.https?.cipher) ? fp.https.cipher[0] : fp.https?.cipher;
+  const issuer = fp.https?.cert_subject?.commonName || fp.https?.cert_subject?.CN;
+  return [server, cipher, issuer].filter(Boolean).map(v => escapeHtml(truncate(String(v), 50))).join(' • ');
+};
+
+const summarizeTags = (node) => {
+  const tags = [];
+  if (node.is_tor_exit) tags.push('TOR exit');
+  if (node.extra_data?.fingerprints?.http_well_known?.['/.git/config']?.status_code === 200) tags.push('Exposed .git');
+  return tags;
+};
+
 // Cached popup template (from old version)
 const popupTemplate = (node) => {
   const orgName = node.organization_obj?. name || node.organization || '';
-  const banners = node.extra_data?.banners ?  Object.keys(node.extra_data.banners).join(', ') : '';
-  const reg = node.organization_obj?.extra_data?.company_search || node.extra_data?.company_search;
-  
-  let registryHtml = '';
-  if (reg) {
-    const title = reg.matched_name || reg.name || '';
-    const url = reg.company_url || '';
-    const num = reg.company_number ?  ` (${reg.company_number})` : '';
-    const src = reg.source ?  ` [${reg.source}]` : '';
-    registryHtml = `<div style="margin-top:. 35rem">Registry: ${src} ${title ?  `<strong>${title}${num}</strong>` : ''} ${url ? `<div><a href="${url}" target="_blank" rel="noopener noreferrer">view</a></div>` : ''}</div>`;
-  }
-  
   const location = [node.city, node.country].filter(Boolean).join(', ');
+  const ports = summarizePorts(node);
+  const os = summarizeOs(node);
+  const http = summarizeHttp(node);
+  const tags = summarizeTags(node);
   
-  return `<div style="min-width:220px">
-    <strong>${node.ip || 'Unknown'}</strong>
-    ${node.hostname ? `<div>Host: ${node.hostname}</div>` : ''}
-    ${orgName ? `<div>Org: ${orgName}</div>` : ''}
-    ${registryHtml}
-    ${node.isp ? `<div>ISP: ${node.isp}</div>` : ''}
-    ${location ? `<div>Location: ${location}</div>` : ''}
-    ${banners ? `<div style="margin-top:.25rem">Open ports: ${banners}</div>` : ''}
+  return `<div class="map-popup" style="min-width:240px">
+    <div class="font-medium">${escapeHtml(node.ip || 'Unknown')}${node.hostname ? ` • ${escapeHtml(node.hostname)}` : ''}</div>
+    <div class="small muted">${orgName ? escapeHtml(orgName) : ''}${location ? ` • ${escapeHtml(location)}` : ''}</div>
+    <div class="map-popup-grid" style="margin-top:0.4rem; display:grid; grid-template-columns:repeat(1,1fr); gap:0.35rem;">
+      <div><div class="muted small">Open ports</div><div>${ports || '—'}</div></div>
+      <div><div class="muted small">OS / Fingerprint</div><div>${os || '—'}</div></div>
+      <div><div class="muted small">HTTP/TLS</div><div>${http || '—'}</div></div>
+    </div>
+    ${tags.length ? `<div class="map-popup-tags" style="margin-top:0.35rem; display:flex; gap:0.25rem; flex-wrap:wrap;">${tags.map(t => `<span style="padding:2px 6px;border:1px solid var(--border, #e5e7eb);border-radius:6px;font-size:12px;">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+    <div class="map-popup-actions" style="margin-top:0.5rem; display:flex; gap:0.4rem; flex-wrap:wrap;">
+      <button class="small popup-action" data-action="panel" data-ip="${escapeHtml(node.ip || '')}">Open panel</button>
+      <button class="small popup-action" data-action="pin" data-ip="${escapeHtml(node.ip || '')}">Pin</button>
+    </div>
   </div>`;
 };
 
