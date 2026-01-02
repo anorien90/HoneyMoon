@@ -73,7 +73,8 @@ class ForensicEngine:
             try:
                 with self.engine.connect() as conn:
                     conn.execute(text("PRAGMA busy_timeout=:timeout"), {"timeout": sqlite_timeout_ms})
-                    conn.execute(text("PRAGMA journal_mode=WAL;"))
+                    conn.execute(text("PRAGMA journal_mode=:mode"), {"mode": "WAL"})
+                    conn.commit()
             except SQLAlchemyError as e:
                 logging.warning(
                     "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
