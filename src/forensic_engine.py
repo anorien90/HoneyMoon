@@ -6,6 +6,7 @@ import whois
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from sqlalchemy import create_engine, or_, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 import json
 import hashlib
@@ -64,8 +65,9 @@ class ForensicEngine:
             try:
                 with self.engine.connect() as conn:
                     conn.execute(text("PRAGMA journal_mode=WAL;"))
-            except Exception as e:
-                print(f"SQLite PRAGMA setup failed: {e}")
+                    conn.execute(text("PRAGMA busy_timeout=30000;"))
+            except SQLAlchemyError as e:
+                print(f"SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): {e}")
         else:
             self.engine = create_engine(db_path, echo=False)
 
