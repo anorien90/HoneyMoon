@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HoneyMoon</title>
+  
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet. css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet. js" crossorigin="" defer></script>
+  
+  <!-- App styles -->
+  <link rel="stylesheet" href="./static/styles.css" />
+  <link rel="stylesheet" href="./static/panel-system.css" />
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo">
+        <img src="/static/media/LogoPlain.png" alt="HoneyMoon Logo" />
+        <img src="/static/media/Banner.png" alt="HoneyMoon" />
+      </div>
+      
+      <div class="toolbar">
+        <!-- Tabs -->
+        <div class="tabs" role="tablist">
+          <button class="tab-btn active" data-tab="explore" role="tab" aria-selected="true">Explore</button>
+          <button class="tab-btn" data-tab="honeypot" role="tab" aria-selected="false">Honeypot</button>
+        </div>
+        
+        <!-- IP controls -->
+        <div class="toolbar-group">
+          <input id="ipInput" type="text" placeholder="IP address" aria-label="Target IP" style="width: 140px" />
+          <button id="locateBtn" class="primary" title="Locate (L)">Locate</button>
+          <button id="traceBtn" title="Trace (T)">Trace</button>
+        </div>
+        
+        <div class="toolbar-group">
+          <label class="small">
+            <input id="deepToggle" type="checkbox" /> Deep
+          </label>
+          <input id="maxttl" type="number" value="30" min="1" max="128" style="width: 50px" aria-label="Max TTL" />
+          <span class="small muted">TTL</span>
+        </div>
+      </div>
+      
+      <div class="toolbar">
+        <button id="addPanelBtn" title="Add panel">+ Panel</button>
+        <button id="toggleLayoutBtn" title="Toggle layout mode">Free</button>
+        <button id="toggleLeft" title="Toggle left sidebar">◀</button>
+        <button id="toggleRight" title="Toggle right sidebar">▶</button>
+        <button id="themeToggle" title="Toggle theme">🌙</button>
+        <button id="closeAllPinsBtn" title="Close all pinned cards">Close pins</button>
+      </div>
+    </header>
+    
+    <!-- Main content -->
+    <main class="app-main">
+      <!-- Left zone -->
+      <div id="leftZone" class="zone" aria-label="Left sidebar"></div>
+      
+      <!-- Main zone -->
+      <div id="mainZone" class="zone" aria-label="Main content area"></div>
+      
+      <!-- Right zone -->
+      <div id="rightZone" class="zone" aria-label="Right sidebar"></div>
+    </main>
+    
+    <!-- Pinned workspace (from old version) -->
+    <div id="pinnedArea" class="pinned-area workspace" aria-label="Workspace for pinned/floating panels"></div>
+    
+  </div>
+  
+  <!-- Source panels (will be moved to zones by JS) -->
+  <div id="sourcePanels" style="display: none;">
+    
+    <!-- Map panel -->
+    <div id="mapCard" class="card">
+      <div class="card-header">
+        <h2>Map</h2>
+      </div>
+      <div class="card-body">
+        <div id="map"></div>
+        <div class="map-footer" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <div id="loading" class="hidden"><span class="spinner"></span><span class="small muted">Working…</span></div>
+            <div id="status" class="small muted">Ready</div>
+            <div id="sessionSummary" class="small muted"></div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button id="fitMarkersBtn" class="small">Fit</button>
+            <button id="clearMapBtn" class="small">Clear</button>
+            <button id="refreshOrgBtn" class="small">Refresh Org</button>
+            <button id="accessesBtn" class="small">Accesses</button>
+            <span class="small muted">Markers: <span id="markerCount">0</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Explore/Database panel -->
+    <div id="exploreCard" class="card">
+      <div class="card-header">
+        <h2>Database Explorer</h2>
+      </div>
+      <div class="card-body">
+        <div id="dbResultsDatabase"></div>
+        <hr style="margin: 1rem 0; border:  none; border-top: 1px solid var(--border);" />
+        <div>
+          <div class="small muted">Recent searches</div>
+          <div id="searchHistory"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Honeypot panel -->
+    <div id="honeypotCard" class="card">
+      <div class="card-header">
+        <h2>Honeypot</h2>
+      </div>
+      <div class="card-body">
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+          <input id="honeypotFilter" type="text" placeholder="Filter by IP or username" style="flex: 1;" />
+          <button id="honeypotListBtn">List</button>
+          <button id="honeypotFlowsBtn">Flows</button>
+        </div>
+        
+        <div id="honeypotSessionsList" class="compact-scroll small muted">(click List)</div>
+        <div id="honeypotFlowsList" class="compact-scroll small muted" style="margin-top: 0.5rem;"></div>
+        
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Get artifact</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="honeypotArtifactName" type="text" placeholder="artifact_filename" style="flex: 1;" />
+          <button id="honeypotArtifactBtn">Download</button>
+        </div>
+        
+        <hr style="margin: 1rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Ingest Cowrie JSON</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="honeypotIngestPath" type="text" placeholder="/data/honeypot/cowrie.json" style="flex: 1;" />
+          <button id="honeypotIngestBtn" style="background: #059669; color: white;">Ingest</button>
+        </div>
+        
+        <div class="small muted" style="margin-top: 0.75rem;">Ingest PCAP</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="pcapPath" type="text" placeholder="/data/capture. pcap" style="flex: 1;" />
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="pcapFilterHost" type="text" placeholder="filter_host (optional)" style="flex: 1;" />
+          <button id="honeypotIngestPcapBtn" style="background: #d97706; color: white;">Ingest PCAP</button>
+        </div>
+        <div id="honeypotIngestStatus" class="small muted" style="margin-top: 0.5rem;"></div>
+      </div>
+    </div>
+    
+    <!-- Selected Node panel -->
+    <div id="selectedNodeCard" class="card">
+      <div class="card-header">
+        <h2>Selected Node</h2>
+      </div>
+      <div class="card-body">
+        <div id="selectedInfo" class="small">
+          <div><strong>IP:</strong> <span id="selIp">—</span> <button id="copyIpBtn" class="small" style="padding: 2px 6px;">Copy</button></div>
+          <div><strong>Hostname:</strong> <span id="selHost">—</span></div>
+          <div><strong>Organization:</strong> <span id="selOrg">—</span></div>
+          <div><strong>Registry:</strong> <span id="selRegistry">—</span></div>
+          <div><strong>ASN / ISP:</strong> <span id="selASN">—</span></div>
+          <div><strong>Location:</strong> <span id="selCC">—</span></div>
+          <div><strong>First Seen:</strong> <span id="selFirst">—</span></div>
+          <div><strong>Last Seen:</strong> <span id="selLast">—</span></div>
+          <div><strong>Seen Count:</strong> <span id="selCount">—</span></div>
+        </div>
+        <div id="recentAccesses" class="compact-scroll small muted" style="margin-top: 0.75rem;"></div>
+      </div>
+    </div>
+    
+    <!-- Hops panel -->
+    <div id="hopCard" class="card">
+      <div class="card-header">
+        <h2>Traceroute Hops</h2>
+      </div>
+      <div class="card-body">
+        <div id="hopList" class="compact-scroll small muted">No traces yet. </div>
+      </div>
+    </div>
+    
+  </div>
+  
+  <!-- Modal container -->
+  <div id="modalContainer" class="modal-hidden" aria-hidden="true"></div>
+  
+  <!-- Toast container -->
+  <div id="toast" aria-live="polite"></div>
+  
+  <!-- App script -->
+  <script type="module" src="./static/app.js"></script>
+</body>
+</html>

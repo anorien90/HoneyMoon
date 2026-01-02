@@ -1,0 +1,17 @@
+services:
+  honeypot:
+    image: cowrie/cowrie:latest
+    container_name: honeypot
+    restart: unless-stopped
+    ports:
+      - "${HOST_SSH_PORT}:${COWRIE_PORT}"
+    volumes:
+      - ./data/honeypot/log:/cowrie/cowrie-git/var/log/cowrie/:rw
+      - ./data/honeypot/data:/data/cowrie/:rw
+    # Security / containment (recommendations)
+    networks:
+      - honeynet
+
+networks:
+  honeynet:
+    driver: bridge
