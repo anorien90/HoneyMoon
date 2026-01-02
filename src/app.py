@@ -30,13 +30,11 @@ def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str
         try:
             rel_candidate = os.path.relpath(candidate, BASE_DIR)
             outside_base = rel_candidate.startswith(f"{os.pardir}{os.sep}") or rel_candidate == os.pardir
-            if not outside_base and os.path.commonpath([BASE_DIR, candidate]) != BASE_DIR:
-                outside_base = True
             if outside_base:
                 logger.warning("%s path is outside the application directory; falling back to defaults", label)
                 return fallback
         except ValueError:
-            logger.warning("%s path is not comparable to application root; falling back to defaults", label)
+            logger.warning("%s path is invalid or incompatible with application root; falling back to defaults", label)
             return fallback
         if os.path.isdir(candidate):
             return candidate
