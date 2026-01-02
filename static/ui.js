@@ -23,6 +23,18 @@ const ZONES = {
   MIDDLE: 'middle'  // New middle layer for overlay panels
 };
 
+// Zone display names helper
+const ZONE_NAMES = {
+  [ZONES.LEFT]: 'left',
+  [ZONES.MAIN]: 'main',
+  [ZONES.RIGHT]: 'right',
+  [ZONES.MIDDLE]: 'middle'
+};
+
+function getZoneName(zone) {
+  return ZONE_NAMES[zone] || zone;
+}
+
 // Base panel definitions
 const BASE_PANELS = {
   map: {
@@ -343,7 +355,7 @@ function getZoneContainer(zone) {
 }
 
 // Create middle zone (overlay layer) if it doesn't exist
-function getOrCreateMiddleZone() {
+export function getOrCreateMiddleZone() {
   let middleZone = $('middleZone');
   if (!middleZone) {
     middleZone = document.createElement('div');
@@ -470,8 +482,7 @@ export function movePanelToZone(key, targetZone) {
   
   savePanelStates();
   dispatchLayoutEvent();
-  const zoneName = targetZone === ZONES.LEFT ? 'left' : targetZone === ZONES.MIDDLE ? 'middle' : targetZone === ZONES.MAIN ? 'main' : 'right';
-  toast(`Moved to ${zoneName}`);
+  toast(`Moved to ${getZoneName(targetZone)}`);
 }
 
 export function togglePanelCollapse(key) {
@@ -563,7 +574,8 @@ export function showPanelPicker() {
 
 // Add a custom panel directly to a specific zone (left, middle, or right)
 export function addPanelToZone(title, html, targetZone) {
-  const zone = targetZone === 'left' ? ZONES.LEFT : targetZone === 'middle' ? ZONES.MIDDLE : ZONES.RIGHT;
+  const zoneMap = { 'left': ZONES.LEFT, 'middle': ZONES.MIDDLE, 'right': ZONES.RIGHT };
+  const zone = zoneMap[targetZone] || ZONES.RIGHT;
   const container = getZoneContainer(zone);
   if (!container) {
     toast(`Cannot add to ${zone} zone`);
@@ -878,8 +890,7 @@ function movePinnedCardToZone(pinnedCard, targetZone) {
   
   debouncedSavePinnedCards();
   dispatchLayoutEvent();
-  const zoneName = targetZone === ZONES.LEFT ? 'left' : targetZone === ZONES.MIDDLE ? 'middle' : 'right';
-  toast(`Moved to ${zoneName} zone`);
+  toast(`Moved to ${getZoneName(targetZone)} zone`);
 }
 
 // Event delegation for pinned cards

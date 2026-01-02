@@ -405,7 +405,8 @@ function initSidebarToggles() {
   
   // Toggle middle zone (overlay)
   $('toggleMiddle')?.addEventListener('click', () => {
-    const zone = $('middleZone');
+    // Create the zone if it doesn't exist, then toggle its visibility
+    const zone = ui.getOrCreateMiddleZone();
     if (zone) {
       zone.classList.toggle('hidden');
       setTimeout(() => mapModule.invalidateSize(), 150);
