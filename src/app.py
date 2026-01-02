@@ -20,11 +20,14 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 DEFAULT_STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+def _resolve_path(env_value: str, fallback: str) -> str:
+    return env_value if env_value and os.path.isdir(env_value) else fallback
+
 env_templates = os.environ.get("IPMAP_TEMPLATES")
 env_static = os.environ.get("IPMAP_STATIC")
 
-TEMPLATE_DIR = env_templates if env_templates and os.path.isdir(env_templates) else DEFAULT_TEMPLATE_DIR
-STATIC_DIR = env_static if env_static and os.path.isdir(env_static) else DEFAULT_STATIC_DIR
+TEMPLATE_DIR = _resolve_path(env_templates, DEFAULT_TEMPLATE_DIR)
+STATIC_DIR = _resolve_path(env_static, DEFAULT_STATIC_DIR)
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 
