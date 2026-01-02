@@ -2,7 +2,7 @@
 // Merged: combines old version's pinned workspace with new panel system
 
 import * as mapModule from './map.js';
-import { escapeHtml, truncate, summarizeNodeDetails } from './util.js';
+import { escapeHtml, truncate, summarizeNodeDetails, getPointerCoords } from './util.js';
 
 export { summarizeNodeDetails } from './util.js';
 
@@ -19,8 +19,21 @@ const STORAGE_KEYS = {
 const ZONES = {
   LEFT: 'left',
   MAIN: 'main',
-  RIGHT: 'right'
+  RIGHT: 'right',
+  MIDDLE: 'middle'  // New middle layer for overlay panels
 };
+
+// Zone display names helper
+const ZONE_NAMES = {
+  [ZONES.LEFT]: 'left',
+  [ZONES.MAIN]: 'main',
+  [ZONES.RIGHT]: 'right',
+  [ZONES.MIDDLE]: 'middle'
+};
+
+function getZoneName(zone) {
+  return ZONE_NAMES[zone] || zone;
+}
 
 // Base panel definitions
 const BASE_PANELS = {
@@ -336,8 +349,27 @@ function getZoneContainer(zone) {
     case ZONES.LEFT: return $('leftZone');
     case ZONES.MAIN: return $('mainZone');
     case ZONES.RIGHT: return $('rightZone');
+    case ZONES.MIDDLE: return getOrCreateMiddleZone();
     default: return $('mainZone');
   }
+}
+
+// Create middle zone (overlay layer) if it doesn't exist
+export function getOrCreateMiddleZone() {
+  let middleZone = $('middleZone');
+  if (!middleZone) {
+    middleZone = document.createElement('div');
+    middleZone.id = 'middleZone';
+    middleZone.className = 'zone middle-zone';
+    middleZone.setAttribute('aria-label', 'Middle overlay zone');
+    const mainZone = $('mainZone');
+    if (mainZone && mainZone.parentElement) {
+      mainZone.parentElement.appendChild(middleZone);
+    } else {
+      document.body.appendChild(middleZone);
+    }
+  }
+  return middleZone;
 }
 
 function createPanelElement(config, contentNode = null) {
@@ -358,6 +390,7 @@ function createPanelElement(config, contentNode = null) {
       </div>
       <div class="panel-controls">
         <button class="panel-btn" data-action="move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="panel-btn" data-action="move-middle" title="Move to middle (overlay)" aria-label="Move to middle overlay">●</button>
         <button class="panel-btn" data-action="move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
         <button class="panel-btn" data-action="collapse" title="Collapse" aria-label="Collapse panel">▾</button>
         ${!config.required ? '<button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>' : ''}
@@ -449,7 +482,7 @@ export function movePanelToZone(key, targetZone) {
   
   savePanelStates();
   dispatchLayoutEvent();
-  toast(`Moved to ${targetZone}`);
+  toast(`Moved to ${getZoneName(targetZone)}`);
 }
 
 export function togglePanelCollapse(key) {
@@ -539,9 +572,10 @@ export function showPanelPicker() {
   });
 }
 
-// Add a custom panel directly to a specific zone (left or right)
+// Add a custom panel directly to a specific zone (left, middle, or right)
 export function addPanelToZone(title, html, targetZone) {
-  const zone = targetZone === 'left' ? ZONES.LEFT : ZONES.RIGHT;
+  const zoneMap = { 'left': ZONES.LEFT, 'middle': ZONES.MIDDLE, 'right': ZONES.RIGHT };
+  const zone = zoneMap[targetZone] || ZONES.RIGHT;
   const container = getZoneContainer(zone);
   if (!container) {
     toast(`Cannot add to ${zone} zone`);
@@ -566,6 +600,7 @@ export function addPanelToZone(title, html, targetZone) {
       </div>
       <div class="panel-controls">
         <button class="panel-btn" data-action="move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="panel-btn" data-action="move-middle" title="Move to middle (overlay)" aria-label="Move to middle overlay">●</button>
         <button class="panel-btn" data-action="move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
         <button class="panel-btn" data-action="collapse" title="Collapse" aria-label="Collapse panel">▾</button>
         <button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>
@@ -609,12 +644,26 @@ function initPanelEventListeners() {
       closePanel(key);
     } else if (action === 'move-left') {
       movePanelToZone(key, ZONES.LEFT);
+    } else if (action === 'move-middle') {
+      movePanelToZone(key, ZONES.MIDDLE);
     } else if (action === 'move-right') {
       movePanelToZone(key, ZONES.RIGHT);
     }
   });
   
-  // Resize handling
+  // Resize handling - use pointerdown for modern browsers
+  document.addEventListener('pointerdown', (e) => {
+    const resizeHandle = e.target.closest('.panel-resize');
+    if (!resizeHandle) return;
+    
+    const panel = resizeHandle.closest('.panel-card');
+    if (!panel) return;
+    
+    e.preventDefault();
+    startPanelResize(panel, e);
+  });
+  
+  // Fallback for browsers without pointer events
   document.addEventListener('mousedown', (e) => {
     const resizeHandle = e.target.closest('.panel-resize');
     if (!resizeHandle) return;
@@ -653,23 +702,30 @@ function startPanelResize(panel, startEvent) {
   const startRect = panel.getBoundingClientRect();
   const startW = startRect.width;
   const startH = startRect.height;
-  const startX = startEvent.clientX;
-  const startY = startEvent.clientY;
+  const coords = getPointerCoords(startEvent);
+  const startX = coords.clientX;
+  const startY = coords.clientY;
   
   const onMove = throttle((e) => {
-    const newW = Math.max(200, startW + (e.clientX - startX));
-    const newH = Math.max(100, startH + (e.clientY - startY));
+    const moveCoords = getPointerCoords(e);
+    const newW = Math.max(200, startW + (moveCoords.clientX - startX));
+    const newH = Math.max(100, startH + (moveCoords.clientY - startY));
     panel.style.width = `${newW}px`;
     panel.style.height = `${newH}px`;
   }, 16);
   
   function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     savePanelStates();
     dispatchLayoutEvent();
   }
   
+  // Use pointer events when available (modern), fallback to mouse events
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
@@ -727,6 +783,7 @@ export function addPinnedCard(title, html, opts = {}) {
       <div><strong>${escapeHtml(title)}</strong></div>
       <div class="pin-controls">
         <button class="pin-move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="pin-move-middle" title="Move to middle (overlay)" aria-label="Move to middle overlay">●</button>
         <button class="pin-move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
         <button class="pin-collapse" title="Collapse" aria-label="Collapse">▾</button>
         <button class="pin-dock" title="Dock/Float" aria-label="Toggle dock">⇱</button>
@@ -784,7 +841,7 @@ function applyPinnedCardState(wrapper, state, area) {
   }
 }
 
-// Move pinned card to a specific zone (left or right sidebar)
+// Move pinned card to a specific zone (left, middle, or right sidebar)
 function movePinnedCardToZone(pinnedCard, targetZone) {
   if (!pinnedCard) return;
   
@@ -814,6 +871,7 @@ function movePinnedCardToZone(pinnedCard, targetZone) {
       </div>
       <div class="panel-controls">
         <button class="panel-btn" data-action="move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="panel-btn" data-action="move-middle" title="Move to middle (overlay)" aria-label="Move to middle overlay">●</button>
         <button class="panel-btn" data-action="move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
         <button class="panel-btn" data-action="collapse" title="Collapse" aria-label="Collapse panel">▾</button>
         <button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>
@@ -832,7 +890,7 @@ function movePinnedCardToZone(pinnedCard, targetZone) {
   
   debouncedSavePinnedCards();
   dispatchLayoutEvent();
-  toast(`Moved to ${targetZone === ZONES.LEFT ? 'left' : 'right'} sidebar`);
+  toast(`Moved to ${getZoneName(targetZone)} zone`);
 }
 
 // Event delegation for pinned cards
@@ -844,6 +902,10 @@ function initPinnedCardEventListeners() {
     if (e.target.closest('.pin-move-left')) {
       e.stopPropagation();
       movePinnedCardToZone(pinnedCard, ZONES.LEFT);
+      updatePinnedCardCount();
+    } else if (e.target.closest('.pin-move-middle')) {
+      e.stopPropagation();
+      movePinnedCardToZone(pinnedCard, ZONES.MIDDLE);
       updatePinnedCardCount();
     } else if (e.target.closest('.pin-move-right')) {
       e.stopPropagation();
@@ -868,8 +930,8 @@ function initPinnedCardEventListeners() {
     }
   });
 
-  // Drag handling for pinned cards (free mode)
-  document.addEventListener('mousedown', (e) => {
+  // Drag handling for pinned cards (free mode) - use pointer events
+  const handlePinnedCardPointerDown = (e) => {
     const header = e.target.closest('.pinned-card .pin-header');
     const area = $('pinnedArea');
     const isGrid = area?.classList.contains('grid-mode');
@@ -891,7 +953,11 @@ function initPinnedCardEventListeners() {
         startResize(card, e);
       }
     }
-  });
+  };
+  
+  // Use pointerdown for modern browsers, fallback to mousedown
+  document.addEventListener('pointerdown', handlePinnedCardPointerDown);
+  document.addEventListener('mousedown', handlePinnedCardPointerDown);
   
   // Grid drag-and-drop (swap order)
   initGridDragDrop();
@@ -983,12 +1049,14 @@ function startDrag(el, startEvent) {
   
   const areaRect = area.getBoundingClientRect();
   const rect = el.getBoundingClientRect();
-  const offsetX = startEvent.clientX - rect.left;
-  const offsetY = startEvent.clientY - rect.top;
+  const coords = getPointerCoords(startEvent);
+  const offsetX = coords.clientX - rect.left;
+  const offsetY = coords.clientY - rect.top;
 
   const onMove = throttle((e) => {
-    let left = e.clientX - areaRect.left - offsetX;
-    let top = e.clientY - areaRect.top - offsetY;
+    const moveCoords = getPointerCoords(e);
+    let left = moveCoords.clientX - areaRect.left - offsetX;
+    let top = moveCoords.clientY - areaRect.top - offsetY;
     left = Math.max(6, Math.min(left, areaRect.width - rect.width - 6));
     top = Math.max(6, Math.min(top, areaRect.height - rect.height - 6));
     el.style.left = `${left}px`;
@@ -996,12 +1064,17 @@ function startDrag(el, startEvent) {
   }, 16);
 
   function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     debouncedSavePinnedCards();
     dispatchLayoutEvent();
   }
   
+  // Use pointer events when available, fallback to mouse events
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
@@ -1014,14 +1087,16 @@ function startResize(el, startEvent) {
   const startRect = el.getBoundingClientRect();
   const startW = startRect.width;
   const startH = startRect.height;
-  const startX = startEvent.clientX;
-  const startY = startEvent.clientY;
+  const coords = getPointerCoords(startEvent);
+  const startX = coords.clientX;
+  const startY = coords.clientY;
   const elLeft = parseInt(el.style.left || '6', 10);
   const elTop = parseInt(el.style.top || '6', 10);
 
   const onMove = throttle((e) => {
-    let newW = Math.max(240, startW + (e.clientX - startX));
-    let newH = Math.max(140, startH + (e.clientY - startY));
+    const moveCoords = getPointerCoords(e);
+    let newW = Math.max(240, startW + (moveCoords.clientX - startX));
+    let newH = Math.max(140, startH + (moveCoords.clientY - startY));
     newW = Math.min(newW, areaRect.width - elLeft);
     newH = Math.min(newH, areaRect.height - elTop);
     el.style.width = `${newW}px`;
@@ -1029,12 +1104,17 @@ function startResize(el, startEvent) {
   }, 16);
 
   function onUp() {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     debouncedSavePinnedCards();
     dispatchLayoutEvent();
   }
   
+  // Use pointer events when available, fallback to mouse events
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
@@ -1157,7 +1237,7 @@ export function closeAllPinnedCards() {
 
 let previousActiveElement = null;
 
-export function showModal({ title = '', html = '', text = '', allowPin = false, allowPinToSidebar = false, onPin = null, onPinLeft = null, onPinRight = null } = {}) {
+export function showModal({ title = '', html = '', text = '', allowPin = false, allowPinToSidebar = false, onPin = null, onPinLeft = null, onPinMiddle = null, onPinRight = null } = {}) {
   const container = $('modalContainer');
   if (!container) return;
   
@@ -1179,6 +1259,7 @@ export function showModal({ title = '', html = '', text = '', allowPin = false, 
   if (allowPinToSidebar) {
     pinButtons = `
       <button id="modalPinLeftBtn" class="modal-btn" title="Pin to left sidebar">◀ Left</button>
+      <button id="modalPinMiddleBtn" class="modal-btn" title="Pin to middle (overlay)">● Middle</button>
       <button id="modalPinRightBtn" class="modal-btn" title="Pin to right sidebar">▶ Right</button>
       <button id="modalPinBtn" class="modal-btn" title="Pin to workspace">📌 Pin</button>
     `;
@@ -1210,6 +1291,10 @@ export function showModal({ title = '', html = '', text = '', allowPin = false, 
   });
   $('modalPinLeftBtn')?.addEventListener('click', () => {
     onPinLeft?.();
+    hideModal();
+  });
+  $('modalPinMiddleBtn')?.addEventListener('click', () => {
+    onPinMiddle?.();
     hideModal();
   });
   $('modalPinRightBtn')?.addEventListener('click', () => {

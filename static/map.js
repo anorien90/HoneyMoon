@@ -123,6 +123,7 @@ const popupTemplate = (node) => {
     <div class="map-popup-actions" style="margin-top:0.5rem; display:flex; gap:0.4rem; flex-wrap:wrap;">
       <button class="small popup-action" data-action="panel" data-ip="${escapeHtml(node.ip || '')}" title="Open in right panel">◀ Panel</button>
       <button class="small popup-action" data-action="pin-left" data-ip="${escapeHtml(node.ip || '')}" title="Pin to left sidebar">◀ Left</button>
+      <button class="small popup-action" data-action="pin-middle" data-ip="${escapeHtml(node.ip || '')}" title="Pin to middle (overlay)">● Middle</button>
       <button class="small popup-action" data-action="pin-right" data-ip="${escapeHtml(node.ip || '')}" title="Pin to right sidebar">▶ Right</button>
       <button class="small popup-action" data-action="pin" data-ip="${escapeHtml(node.ip || '')}" title="Pin to workspace">📌 Pin</button>
     </div>
