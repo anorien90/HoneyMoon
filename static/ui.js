@@ -1,5 +1,5 @@
 // Optimized UI module with unified panel management system
-// Merged:combines old version's pinned workspace with new panel system
+// Merged: combines old version's pinned workspace with new panel system
 
 import * as mapModule from './map.js';
 import { escapeHtml, truncate, summarizeNodeDetails } from './util.js';
@@ -684,7 +684,7 @@ function dispatchLayoutEvent() {
 // ============================================
 
 function genId() {
-  return `pin-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `pin-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
 
 function getCardOrder(card) {
