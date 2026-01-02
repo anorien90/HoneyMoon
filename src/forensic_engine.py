@@ -5,7 +5,9 @@ import requests
 import whois
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
-from sqlalchemy import create_engine, or_
+import logging
+from sqlalchemy import create_engine, or_, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 import json
 import hashlib
@@ -55,7 +57,31 @@ class ForensicEngine:
     def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True):
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
-        self.engine = create_engine(db_path, echo=False)
+        db_url = str(db_path)
+        db_url_lower = db_url.lower()
+        if db_url_lower.startswith("sqlite:"):
+            env_timeout = os.environ.get("SQLITE_BUSY_TIMEOUT_SECONDS", "30")
+            try:
+                sqlite_timeout_seconds = float(env_timeout) if env_timeout else 30.0
+            except ValueError:
+                sqlite_timeout_seconds = 30.0
+            sqlite_timeout_ms = int(sqlite_timeout_seconds * 1000)
+            self.engine = create_engine(
+                db_url,
+                echo=False,
+                connect_args={"check_same_thread": False}
+            )
+            try:
+                with self.engine.begin() as conn:
+                    conn.execute(text(f"PRAGMA busy_timeout={sqlite_timeout_ms}"))
+                    conn.execute(text("PRAGMA journal_mode=WAL"))
+            except SQLAlchemyError as e:
+                logging.warning(
+                    "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
+                    e,
+                )
+        else:
+            self.engine = create_engine(db_path, echo=False)
 
         # store honeypot artifacts here by default
         self.honeypot_data_dir = os.environ.get("HONEY_DATA_DIR", honeypot_data_dir)
