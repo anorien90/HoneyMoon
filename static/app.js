@@ -6,7 +6,7 @@ import * as mapModule from './map.js';
 import * as ui from './ui.js';
 import * as honeypotUI from './honeypot-ui.js';
 import * as dbUI from './db-ui.js';
-import * as honeypotApi from './honeypot. js';
+import * as honeypotApi from './honeypot.js';
 
 const $ = id => document.getElementById(id);
 
@@ -64,7 +64,7 @@ export async function locateIP() {
     mapModule.clearMap();
     if (node) mapModule.addMarkerForNode(node, 'middle');
     ui.setSelectedNodeUI(node);
-    ui.renderHopListFromNode? .(node);
+    ui.renderHopListFromNode?.(node);
     
     if (mapModule.getMarkerCount() > 0) mapModule.fitToMarkers();
     updateMarkerCount();
@@ -155,7 +155,7 @@ export async function traceIP() {
 
 function updateMarkerCount() {
   const el = $('markerCount');
-  if (el) el.textContent = String(mapModule.getMarkerCount?. () || 0);
+  if (el) el.textContent = String(mapModule.getMarkerCount?.() || 0);
 }
 
 function clearMap() {
