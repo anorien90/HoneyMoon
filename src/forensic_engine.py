@@ -537,8 +537,8 @@ class ForensicEngine:
     def _recover_node_on_integrity_error(self, session, ip, seen_time=None):
         try:
             session.rollback()
-        except Exception:
-            pass
+        except SQLAlchemyError as e:
+            logging.warning("Rollback failed during node recovery for %s: %s", ip, e)
 
         node = session.query(NetworkNode).filter_by(ip=ip).first()
         if node:
@@ -556,9 +556,12 @@ class ForensicEngine:
                 logging.warning("IntegrityError during recovery for NetworkNode %s", ip)
                 try:
                     session.rollback()
-                except Exception:
-                    pass
+                except SQLAlchemyError as e:
+                    logging.warning("Rollback failed during recovery IntegrityError for %s: %s", ip, e)
                 node = session.query(NetworkNode).filter_by(ip=ip).first()
+
+        if not node:
+            node = session.query(NetworkNode).filter_by(ip=ip).first()
 
         return node
 
@@ -859,11 +862,12 @@ class ForensicEngine:
                 node = self.get_node_from_db_or_web(wa.remote_addr, session=session) if enrich else self.ensure_node_minimal(wa.remote_addr, seen_time=ts, session=session)
                 if node:
                     wa.node = node
-            except Exception:
+            except Exception as e:
+                logging.warning("Error resolving node for %s: %s", wa.remote_addr, e)
                 try:
                     session.rollback()
-                except Exception:
-                    pass
+                except SQLAlchemyError as rb_err:
+                    logging.warning("Rollback failed after node resolution error for %s: %s", wa.remote_addr, rb_err)
 
         session.add(wa)
         session.flush()
