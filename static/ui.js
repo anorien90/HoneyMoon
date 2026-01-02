@@ -1,5 +1,5 @@
 // Optimized UI module with unified panel management system
-// Merged:  combines old version's pinned workspace with new panel system
+// Merged:combines old version's pinned workspace with new panel system
 
 import * as mapModule from './map.js';
 import { escapeHtml, truncate, summarizeNodeDetails } from './util.js';
@@ -8,7 +8,7 @@ export { summarizeNodeDetails } from './util.js';
 
 // Storage keys
 const STORAGE_KEYS = {
-  searchHistory: 'ipExplorer. searchHistory. v2',
+  searchHistory: 'ipExplorer.searchHistory.v2',
   panels: 'ipExplorer.panels.v2',
   gridMode: 'ipExplorer.gridMode.v2',
   pinned: 'ipExplorer.pinned.v2',
@@ -36,19 +36,19 @@ const BASE_PANELS = {
   },
   explore: {
     id: 'panel-explore',
-    title:  'Database Explorer',
+    title:'Database Explorer',
     icon: '🔍',
-    defaultZone:  ZONES.LEFT,
+    defaultZone:ZONES.LEFT,
     required: false,
     minWidth: 280,
     minHeight: 200,
     sourceSelector: '#exploreCard'
   },
   honeypot: {
-    id:  'panel-honeypot',
+    id:'panel-honeypot',
     title: 'Honeypot',
     icon: '🍯',
-    defaultZone:  ZONES.LEFT,
+    defaultZone:ZONES.LEFT,
     required: false,
     minWidth: 280,
     minHeight: 180,
@@ -58,7 +58,7 @@ const BASE_PANELS = {
     id: 'panel-selected',
     title: 'Selected Node',
     icon: '📊',
-    defaultZone:  ZONES.RIGHT,
+    defaultZone:ZONES.RIGHT,
     required: false,
     minWidth: 260,
     minHeight: 150,
@@ -68,7 +68,7 @@ const BASE_PANELS = {
     id: 'panel-hops',
     title: 'Traceroute Hops',
     icon: '🛤️',
-    defaultZone:  ZONES.RIGHT,
+    defaultZone:ZONES.RIGHT,
     required: false,
     minWidth: 260,
     minHeight: 150,
@@ -85,10 +85,10 @@ let gridMode = false;
 // DOM cache
 const domCache = new Map();
 function $(id) {
-  if (! domCache.has(id)) {
+  if (!domCache.has(id)) {
     domCache.set(id, document.getElementById(id));
   }
-  return domCache. get(id);
+  return domCache.get(id);
 }
 
 function clearDomCache() {
@@ -158,9 +158,9 @@ export function setLoading(on, text = null) {
 // ============================================
 
 export function pushSearchHistory(q) {
-  if (! q) return;
+  if (!q) return;
   try {
-    const arr = JSON.parse(localStorage.getItem(STORAGE_KEYS. searchHistory) || '[]');
+    const arr = JSON.parse(localStorage.getItem(STORAGE_KEYS.searchHistory) || '[]');
     const filtered = [q, ...arr.filter(x => x !== q)].slice(0, 20);
     localStorage.setItem(STORAGE_KEYS.searchHistory, JSON.stringify(filtered));
     requestAnimationFrame(renderSearchHistory);
@@ -175,7 +175,7 @@ export function renderSearchHistory() {
   
   try {
     const arr = JSON.parse(localStorage.getItem(STORAGE_KEYS.searchHistory) || '[]');
-    if (! arr.length) {
+    if (!arr.length) {
       searchHistoryEl.innerHTML = '';
       return;
     }
@@ -254,9 +254,9 @@ export function setSelectedNodeUI(node) {
       if (reg) {
         const title = reg.matched_name || reg.name || '';
         const url = reg.company_url || '';
-        const num = reg.company_number ?  ` (${reg.company_number})` : '';
-        const src = reg.source ?  `[${reg.source}] ` : '';
-        selRegistryEl.innerHTML = `${src}<strong>${escapeHtml(title)}${escapeHtml(num)}</strong> ${url ?  `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">view</a>` : ''}`;
+        const num = reg.company_number ?` (${reg.company_number})` : '';
+        const src = reg.source ?`[${reg.source}] ` : '';
+        selRegistryEl.innerHTML = `${src}<strong>${escapeHtml(title)}${escapeHtml(num)}</strong> ${url ?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">view</a>` : ''}`;
       } else {
         selRegistryEl.innerHTML = '—';
       }
@@ -274,7 +274,7 @@ export function renderHopList(hops, nodes) {
   const hopList = $('hopList');
   if (!hopList) return;
   
-  if (!hops?. length) {
+  if (!hops?.length) {
     hopList.innerHTML = '<div class="muted">No hops recorded</div>';
     return;
   }
@@ -299,7 +299,7 @@ export function renderHopList(hops, nodes) {
       <div class="hop-org muted">${escapeHtml(node?.organization || '')}</div>`;
     
     if (node) row._nodeData = node;
-    frag. appendChild(row);
+    frag.appendChild(row);
   });
   
   hopList.innerHTML = '';
@@ -311,7 +311,7 @@ export function renderHopListFromNode(node) {
   if (!hopList) return;
   
   if (!node?.path_hops?.length) {
-    hopList.innerHTML = '<div class="muted">No traceroute hops for this node. </div>';
+    hopList.innerHTML = '<div class="muted">No traceroute hops for this node.</div>';
     return;
   }
   
@@ -319,12 +319,12 @@ export function renderHopListFromNode(node) {
   node.path_hops.forEach(h => {
     const div = document.createElement('div');
     div.className = 'hop-row';
-    div.innerHTML = `<strong>#${h.hop_number}</strong> ${escapeHtml(h. ip || '(no reply)')}`;
+    div.innerHTML = `<strong>#${h.hop_number}</strong> ${escapeHtml(h.ip || '(no reply)')}`;
     frag.appendChild(div);
   });
   
   hopList.innerHTML = '';
-  hopList. appendChild(frag);
+  hopList.appendChild(frag);
 }
 
 // ============================================
@@ -354,13 +354,13 @@ function createPanelElement(config, contentNode = null) {
     <div class="panel-header">
       <div class="panel-title">
         <span class="panel-icon">${config.icon || '📋'}</span>
-        <span>${escapeHtml(config. title)}</span>
+        <span>${escapeHtml(config.title)}</span>
       </div>
       <div class="panel-controls">
         <button class="panel-btn" data-action="move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
         <button class="panel-btn" data-action="move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
         <button class="panel-btn" data-action="collapse" title="Collapse" aria-label="Collapse panel">▾</button>
-        ${! config.required ? '<button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>' : ''}
+        ${!config.required ? '<button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>' : ''}
       </div>
     </div>
     <div class="panel-body"></div>
@@ -380,7 +380,7 @@ function initBasePanel(key) {
   if (!config) return null;
   
   const savedState = loadPanelState(key);
-  const zone = savedState?.zone || config. defaultZone;
+  const zone = savedState?.zone || config.defaultZone;
   const container = getZoneContainer(zone);
   if (!container) return null;
   
@@ -406,7 +406,7 @@ function initBasePanel(key) {
   }
   
   container.appendChild(panel);
-  panelState.set(key, { panel, config:  panelConfig, zone });
+  panelState.set(key, { panel, config:panelConfig, zone });
   
   return panel;
 }
@@ -471,12 +471,12 @@ function loadPanelState(key) {
 
 const savePanelStates = debounce(() => {
   const states = {};
-  panelState. forEach((state, key) => {
+  panelState.forEach((state, key) => {
     const panel = state.panel;
     states[key] = {
       zone: state.zone,
       collapsed: panel.classList.contains('panel-collapsed'),
-      width: panel.style.width ?  parseInt(panel.style.width, 10) : null,
+      width: panel.style.width ?parseInt(panel.style.width, 10) : null,
       height: panel.style.height ? parseInt(panel.style.height, 10) : null,
       order: panel.style.order ? parseInt(panel.style.order, 10) : null
     };
@@ -501,7 +501,7 @@ export function initPanels() {
 export function showPanelPicker() {
   const closedPanels = Object.entries(BASE_PANELS).filter(([key]) => !panelState.has(key));
   
-  if (! closedPanels.length) {
+  if (!closedPanels.length) {
     toast('All panels are open');
     return;
   }
@@ -537,6 +537,62 @@ export function showPanelPicker() {
       picker.remove();
     }
   });
+}
+
+// Add a custom panel directly to a specific zone (left or right)
+export function addPanelToZone(title, html, targetZone) {
+  const zone = targetZone === 'left' ? ZONES.LEFT : ZONES.RIGHT;
+  const container = getZoneContainer(zone);
+  if (!container) {
+    toast(`Cannot add to ${zone} zone`);
+    return null;
+  }
+  
+  const id = `custom-panel-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+  
+  const panel = document.createElement('div');
+  panel.className = 'panel-card';
+  panel.id = id;
+  panel.dataset.panelKey = id;
+  panel.dataset.zone = zone;
+  panel.style.minWidth = '260px';
+  panel.style.minHeight = '150px';
+  
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">
+        <span class="panel-icon">📌</span>
+        <span>${escapeHtml(title)}</span>
+      </div>
+      <div class="panel-controls">
+        <button class="panel-btn" data-action="move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="panel-btn" data-action="move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
+        <button class="panel-btn" data-action="collapse" title="Collapse" aria-label="Collapse panel">▾</button>
+        <button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>
+      </div>
+    </div>
+    <div class="panel-body">${html || ''}</div>
+    <div class="panel-resize"></div>
+  `;
+  
+  container.appendChild(panel);
+  
+  // Store in panel state for proper management
+  panelState.set(id, {
+    panel,
+    config: {
+      id,
+      title,
+      icon: '📌',
+      required: false,
+      zone: zone
+    },
+    zone: zone
+  });
+  
+  savePanelStates();
+  dispatchLayoutEvent();
+  return panel;
 }
 
 function initPanelEventListeners() {
@@ -575,7 +631,7 @@ function initPanelEventListeners() {
     const btn = e.target.closest('.history-btn[data-query]');
     if (btn) {
       const queryInput = $('dbPanelQuery');
-      if (queryInput) queryInput.value = btn.dataset. query;
+      if (queryInput) queryInput.value = btn.dataset.query;
       window.dispatchEvent(new Event('searchDB'));
     }
   });
@@ -632,7 +688,7 @@ function genId() {
 }
 
 function getCardOrder(card) {
-  const v = card.dataset.order ??  card.style.order;
+  const v = card.dataset.order ??card.style.order;
   const parsed = parseInt(v, 10);
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -645,7 +701,7 @@ function setCardOrder(card, order) {
 
 function nextCardOrder(area) {
   let maxOrder = 0;
-  area?. querySelectorAll('.pinned-card').forEach(c => {
+  area?.querySelectorAll('.pinned-card').forEach(c => {
     maxOrder = Math.max(maxOrder, getCardOrder(c));
   });
   return maxOrder + 1;
@@ -656,20 +712,22 @@ export function addPinnedCard(title, html, opts = {}) {
   if (!area) return null;
   
   const savedState = opts.state || null;
-  const id = savedState?. id || genId();
+  const id = savedState?.id || genId();
   const persist = opts.persist !== false;
   
   const wrapper = document.createElement('div');
   wrapper.className = 'pinned-card';
-  wrapper. id = id;
-  wrapper. dataset.pinnedId = id;
-  wrapper.dataset.persist = persist ?  '1' : '0';
-  setCardOrder(wrapper, savedState?.order ??  nextCardOrder(area));
+  wrapper.id = id;
+  wrapper.dataset.pinnedId = id;
+  wrapper.dataset.persist = persist ? '1' : '0';
+  setCardOrder(wrapper, savedState?.order ?? nextCardOrder(area));
 
   wrapper.innerHTML = `
     <div class="pin-header">
       <div><strong>${escapeHtml(title)}</strong></div>
       <div class="pin-controls">
+        <button class="pin-move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="pin-move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
         <button class="pin-collapse" title="Collapse" aria-label="Collapse">▾</button>
         <button class="pin-dock" title="Dock/Float" aria-label="Toggle dock">⇱</button>
         <button class="pin-close" title="Close" aria-label="Close">✕</button>
@@ -679,7 +737,7 @@ export function addPinnedCard(title, html, opts = {}) {
     <div class="resize-handle" aria-label="Resize"></div>`;
 
   if (opts.className) {
-    wrapper.classList.add(... opts.className.split(' ').filter(Boolean));
+    wrapper.classList.add(...opts.className.split(' ').filter(Boolean));
   }
 
   area.appendChild(wrapper);
@@ -701,7 +759,7 @@ function applyPinnedCardState(wrapper, state, area) {
 
   if (state) {
     setCardOrder(wrapper, state.order);
-    if (state. docked) {
+    if (state.docked) {
       wrapper.classList.add('docked');
       wrapper.style.position = 'relative';
       wrapper.style.left = '';
@@ -709,9 +767,9 @@ function applyPinnedCardState(wrapper, state, area) {
       if (state.width) wrapper.style.width = `${state.width}px`;
       if (state.height) wrapper.style.height = `${state.height}px`;
     } else {
-      wrapper.classList. remove('docked');
+      wrapper.classList.remove('docked');
       wrapper.style.position = 'absolute';
-      wrapper.style.left = `${state.left ??  defaultLeft}px`;
+      wrapper.style.left = `${state.left ??defaultLeft}px`;
       wrapper.style.top = `${state.top ?? defaultTop}px`;
       if (state.width) wrapper.style.width = `${state.width}px`;
       if (state.height) wrapper.style.height = `${state.height}px`;
@@ -725,19 +783,76 @@ function applyPinnedCardState(wrapper, state, area) {
   }
 }
 
+// Move pinned card to a specific zone (left or right sidebar)
+function movePinnedCardToZone(pinnedCard, targetZone) {
+  if (!pinnedCard) return;
+  
+  const targetContainer = getZoneContainer(targetZone);
+  if (!targetContainer) {
+    toast(`Cannot move to ${targetZone} zone`);
+    return;
+  }
+  
+  // Convert pinned card to a panel-style card in the target zone
+  const title = pinnedCard.querySelector('.pin-header strong')?.textContent || 'Card';
+  const bodyContent = pinnedCard.querySelector('.pin-body')?.innerHTML || '';
+  
+  // Create a new panel-style element for the zone
+  const panel = document.createElement('div');
+  panel.className = 'panel-card';
+  panel.dataset.panelKey = pinnedCard.dataset.pinnedId || genId();
+  panel.dataset.zone = targetZone;
+  panel.style.minWidth = '260px';
+  panel.style.minHeight = '150px';
+  
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">
+        <span class="panel-icon">📌</span>
+        <span>${escapeHtml(title)}</span>
+      </div>
+      <div class="panel-controls">
+        <button class="panel-btn" data-action="move-left" title="Move to left" aria-label="Move to left sidebar">◀</button>
+        <button class="panel-btn" data-action="move-right" title="Move to right" aria-label="Move to right sidebar">▶</button>
+        <button class="panel-btn" data-action="collapse" title="Collapse" aria-label="Collapse panel">▾</button>
+        <button class="panel-btn" data-action="close" title="Close" aria-label="Close panel">✕</button>
+      </div>
+    </div>
+    <div class="panel-body">${bodyContent}</div>
+    <div class="panel-resize"></div>
+  `;
+  
+  // Add the panel to the target zone
+  targetContainer.appendChild(panel);
+  
+  // Remove the original pinned card
+  pinnedCardCache.delete(pinnedCard.dataset.pinnedId);
+  pinnedCard.remove();
+  
+  debouncedSavePinnedCards();
+  dispatchLayoutEvent();
+  toast(`Moved to ${targetZone === ZONES.LEFT ? 'left' : 'right'} sidebar`);
+}
+
 // Event delegation for pinned cards
 function initPinnedCardEventListeners() {
   document.addEventListener('click', (e) => {
     const pinnedCard = e.target.closest('.pinned-card');
     if (!pinnedCard) return;
     
-    if (e.target.closest('.pin-collapse')) {
+    if (e.target.closest('.pin-move-left')) {
+      e.stopPropagation();
+      movePinnedCardToZone(pinnedCard, ZONES.LEFT);
+    } else if (e.target.closest('.pin-move-right')) {
+      e.stopPropagation();
+      movePinnedCardToZone(pinnedCard, ZONES.RIGHT);
+    } else if (e.target.closest('.pin-collapse')) {
       e.stopPropagation();
       pinnedCard.classList.toggle('card-collapsed');
       debouncedSavePinnedCards();
       dispatchLayoutEvent();
-    } else if (e.target.closest('. pin-close')) {
-      pinnedCardCache.delete(pinnedCard. dataset.pinnedId);
+    } else if (e.target.closest('.pin-close')) {
+      pinnedCardCache.delete(pinnedCard.dataset.pinnedId);
       pinnedCard.remove();
       debouncedSavePinnedCards();
       dispatchLayoutEvent();
@@ -753,11 +868,11 @@ function initPinnedCardEventListeners() {
   document.addEventListener('mousedown', (e) => {
     const header = e.target.closest('.pinned-card .pin-header');
     const area = $('pinnedArea');
-    const isGrid = area?. classList.contains('grid-mode');
-    if (header && ! e.target.closest('.pin-controls') && !isGrid) {
+    const isGrid = area?.classList.contains('grid-mode');
+    if (header && !e.target.closest('.pin-controls') && !isGrid) {
       const card = header.closest('.pinned-card');
       bringToFront(card);
-      if (! card.classList.contains('docked')) {
+      if (!card.classList.contains('docked')) {
         e.preventDefault();
         startDrag(card, e);
       }
@@ -783,18 +898,18 @@ let dragSrcId = null;
 function initGridDragDrop() {
   document.addEventListener('dragstart', (e) => {
     const area = $('pinnedArea');
-    if (!area?. classList.contains('grid-mode')) return;
-    const card = e.target.closest('. pinned-card');
+    if (!area?.classList.contains('grid-mode')) return;
+    const card = e.target.closest('.pinned-card');
     if (!card) return;
-    dragSrcId = card.dataset. pinnedId;
+    dragSrcId = card.dataset.pinnedId;
     card.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
   });
 
   document.addEventListener('dragover', (e) => {
     const area = $('pinnedArea');
-    if (!area?.classList. contains('grid-mode')) return;
-    const card = e.target.closest('. pinned-card');
+    if (!area?.classList.contains('grid-mode')) return;
+    const card = e.target.closest('.pinned-card');
     if (!card) return;
     e.preventDefault();
     card.classList.add('drag-over');
@@ -804,13 +919,13 @@ function initGridDragDrop() {
     const area = $('pinnedArea');
     if (!area?.classList.contains('grid-mode')) return;
     const card = e.target.closest('.pinned-card');
-    card?. classList.remove('drag-over');
+    card?.classList.remove('drag-over');
   });
 
   document.addEventListener('drop', (e) => {
     const area = $('pinnedArea');
     if (!area?.classList.contains('grid-mode')) return;
-    const target = e.target. closest('.pinned-card');
+    const target = e.target.closest('.pinned-card');
     if (!target || !dragSrcId) return;
     e.preventDefault();
 
@@ -832,8 +947,8 @@ function initGridDragDrop() {
 }
 
 function dragCleanup() {
-  document.querySelectorAll('.pinned-card. dragging, .pinned-card.drag-over').forEach(c => {
-    c.classList. remove('dragging', 'drag-over');
+  document.querySelectorAll('.pinned-card.dragging, .pinned-card.drag-over').forEach(c => {
+    c.classList.remove('dragging', 'drag-over');
   });
   dragSrcId = null;
 }
@@ -844,7 +959,7 @@ function togglePinnedCardDock(card) {
   
   if (isDocked) {
     card.style.left = '';
-    card.style. top = '';
+    card.style.top = '';
     card.style.zIndex = '';
     card.style.position = 'relative';
   } else {
@@ -852,7 +967,7 @@ function togglePinnedCardDock(card) {
     const rect = card.getBoundingClientRect();
     const areaRect = area.getBoundingClientRect();
     card.style.left = `${Math.max(8, rect.left - areaRect.left)}px`;
-    card.style.top = `${Math.max(8, rect.top - areaRect. top)}px`;
+    card.style.top = `${Math.max(8, rect.top - areaRect.top)}px`;
   }
   debouncedSavePinnedCards();
   dispatchLayoutEvent();
@@ -904,7 +1019,7 @@ function startResize(el, startEvent) {
     let newW = Math.max(240, startW + (e.clientX - startX));
     let newH = Math.max(140, startH + (e.clientY - startY));
     newW = Math.min(newW, areaRect.width - elLeft);
-    newH = Math.min(newH, areaRect. height - elTop);
+    newH = Math.min(newH, areaRect.height - elTop);
     el.style.width = `${newW}px`;
     el.style.height = `${newH}px`;
   }, 16);
@@ -929,7 +1044,7 @@ function bringToFront(el) {
   
   children.forEach(c => {
     const z = parseInt(c.style.zIndex || '0', 10);
-    if (! isNaN(z)) maxZ = Math.max(maxZ, z);
+    if (!isNaN(z)) maxZ = Math.max(maxZ, z);
     c.classList.remove('active');
   });
   
@@ -944,33 +1059,33 @@ const debouncedSavePinnedCards = debounce(savePinnedCards, 300);
 function currentPinnedStorageKey() {
   const area = $('pinnedArea');
   const isGrid = area?.classList.contains('grid-mode');
-  return isGrid ?  STORAGE_KEYS.pinnedGrid : STORAGE_KEYS.pinned;
+  return isGrid ?STORAGE_KEYS.pinnedGrid : STORAGE_KEYS.pinned;
 }
 
 export function savePinnedCards(mode = null) {
   const area = $('pinnedArea');
   if (!area) return;
   
-  const isGrid = mode ?  mode === 'grid' : area. classList.contains('grid-mode');
-  const key = isGrid ?  STORAGE_KEYS.pinnedGrid : STORAGE_KEYS. pinned;
+  const isGrid = mode ?mode === 'grid' : area.classList.contains('grid-mode');
+  const key = isGrid ?STORAGE_KEYS.pinnedGrid : STORAGE_KEYS.pinned;
 
-  const cards = area.querySelectorAll('. pinned-card');
+  const cards = area.querySelectorAll('.pinned-card');
   const out = Array.from(cards).flatMap(c => {
     const shouldPersist = c.dataset.persist !== '0';
-    if (! shouldPersist) return [];
+    if (!shouldPersist) return [];
     const titleEl = c.querySelector('.pin-header strong');
     const bodyEl = c.querySelector('.pin-body');
     const docked = c.classList.contains('docked');
     
     return [{
       id: c.dataset.pinnedId || c.id,
-      title: titleEl?. textContent || '',
+      title: titleEl?.textContent || '',
       html: bodyEl?.innerHTML || '',
       docked,
       collapsed: c.classList.contains('card-collapsed'),
       left: docked ? null : parseInt(c.style.left || '0', 10),
       top: docked ? null : parseInt(c.style.top || '0', 10),
-      width: c.style.width ?  parseInt(c.style.width, 10) : null,
+      width: c.style.width ?parseInt(c.style.width, 10) : null,
       height: c.style.height ? parseInt(c.style.height, 10) : null,
       z: c.style.zIndex ? parseInt(c.style.zIndex, 10) : null,
       order: getCardOrder(c)
@@ -978,7 +1093,7 @@ export function savePinnedCards(mode = null) {
   });
   
   try {
-    localStorage.setItem(key, JSON. stringify(out));
+    localStorage.setItem(key, JSON.stringify(out));
   } catch (e) {
     console.error('Failed to save pinned cards:', e);
   }
@@ -1000,8 +1115,8 @@ export function restorePinnedCards(mode = null) {
   const area = $('pinnedArea');
   if (!area) return;
   
-  const isGrid = mode ?  mode === 'grid' : area.classList.contains('grid-mode');
-  const states = loadPinnedState(isGrid ?  'grid' : 'free');
+  const isGrid = mode ?mode === 'grid' : area.classList.contains('grid-mode');
+  const states = loadPinnedState(isGrid ?'grid' : 'free');
   if (!states.length) return;
   
   // Clear existing persisted cards only
@@ -1019,7 +1134,7 @@ export function closeAllPinnedCards() {
   const area = $('pinnedArea');
   if (!area) return;
   
-  area. querySelectorAll('.pinned-card').forEach(c => c.remove());
+  area.querySelectorAll('.pinned-card').forEach(c => c.remove());
   pinnedCardCache.clear();
   
   try {
@@ -1091,7 +1206,7 @@ export function hideModal() {
   container.setAttribute('aria-hidden', 'true');
   container.innerHTML = '';
   
-  previousActiveElement?. focus();
+  previousActiveElement?.focus();
 }
 
 // ============================================
@@ -1102,7 +1217,7 @@ export function setGridMode(enabled) {
   gridMode = enabled;
   
   // Apply to panel zones
-  [ZONES.LEFT, ZONES. MAIN, ZONES.RIGHT].forEach(zone => {
+  [ZONES.LEFT, ZONES.MAIN, ZONES.RIGHT].forEach(zone => {
     const container = getZoneContainer(zone);
     if (container) {
       container.classList.toggle('grid-mode', enabled);
@@ -1119,10 +1234,10 @@ export function setGridMode(enabled) {
         c.style.position = 'relative';
         c.style.left = '';
         c.style.top = '';
-        if (! c.dataset.order) setCardOrder(c, i);
+        if (!c.dataset.order) setCardOrder(c, i);
         c.setAttribute('draggable', 'true');
       } else {
-        c. removeAttribute('draggable');
+        c.removeAttribute('draggable');
         c.classList.remove('docked');
         c.style.position = 'absolute';
         if (!c.style.left || !c.style.top) {
@@ -1142,7 +1257,7 @@ export function setGridMode(enabled) {
 
 export function saveGridMode(enabled) {
   try {
-    localStorage.setItem(STORAGE_KEYS.gridMode, enabled ?  '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.gridMode, enabled ?'1' : '0');
   } catch (e) {
     console.error('Failed to save grid mode', e);
   }
@@ -1176,8 +1291,8 @@ export function enableFloatButtons() {
     btn.dataset.action = 'float';
     
     const controls = header.querySelector('.card-toggle, .pin-controls');
-    if (controls?. parentNode) {
-      controls.parentNode.insertBefore(btn, controls. nextSibling);
+    if (controls?.parentNode) {
+      controls.parentNode.insertBefore(btn, controls.nextSibling);
     } else {
       header.appendChild(btn);
     }
@@ -1193,13 +1308,13 @@ function initFloatButtonListeners() {
     if (!btn) return;
     
     const card = btn.closest('.card');
-    const header = card?. querySelector('.card-header');
+    const header = card?.querySelector('.card-header');
     if (!card || !header) return;
     
     let title = 'Card';
     const strong = header.querySelector('strong');
     const heading = header.querySelector('h2, h3');
-    title = strong?.textContent?. trim() || heading?.textContent?.trim() || title;
+    title = strong?.textContent?.trim() || heading?.textContent?.trim() || title;
     
     floatCardToPinned(card, title, { persist: false });
     toast(`${title} floated`);
@@ -1211,11 +1326,11 @@ export function floatCardToPinned(cardOrSelector, title = null, opts = {}) {
   const card = typeof cardOrSelector === 'string' ? document.querySelector(cardOrSelector) : cardOrSelector;
   if (!card) return null;
   const header = card.querySelector('.card-header');
-  const resolvedTitle = title || header?. querySelector('h2, h3, strong')?.textContent?.trim() || 'Panel';
+  const resolvedTitle = title || header?.querySelector('h2, h3, strong')?.textContent?.trim() || 'Panel';
   const clonedCard = card;
   clonedCard.classList.add('hidden-placeholder');
-  const body = clonedCard.querySelector('. card-body');
-  const container = body ?  body :  clonedCard;
+  const body = clonedCard.querySelector('.card-body');
+  const container = body ? body : clonedCard;
   return addPinnedCardNode(resolvedTitle, container, { persist: opts.persist !== false, className: opts.className });
 }
 
@@ -1247,8 +1362,8 @@ export function initUI() {
   // Copy IP button
   $('copyIpBtn')?.addEventListener('click', () => {
     const ip = window.selectedNode?.ip || $('selIp')?.textContent || '';
-    if (! ip || ip === '—') return toast('No IP to copy');
-    navigator.clipboard?. writeText(ip)
+    if (!ip || ip === '—') return toast('No IP to copy');
+    navigator.clipboard?.writeText(ip)
       .then(() => toast('Copied IP'))
       .catch(() => toast('Failed to copy'));
   });
