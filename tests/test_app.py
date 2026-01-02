@@ -3,7 +3,7 @@ Tests for src/app.py Flask API routes.
 """
 import pytest
 import os
-import json
+import sys
 import tempfile
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
@@ -21,14 +21,15 @@ def app_client(temp_dir):
     os.environ["NGINX_AUTO_INGEST"] = "false"
     os.environ["HONEY_DATA_DIR"] = temp_dir
     
-    # Mock nmap before importing the app
-    with patch('nmap.PortScanner') as mock_nmap:
-        mock_nmap.return_value = MagicMock()
+    # Mock nmap.PortScanner at module level before src.app imports
+    with patch.dict(sys.modules, {'nmap': MagicMock()}):
+        # Clear any cached imports
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith('src.'):
+                del sys.modules[mod_name]
         
-        # Import and configure app - need to reload to pick up the mocked nmap
-        import importlib
+        # Import app with mocked nmap
         from src import app as app_module
-        importlib.reload(app_module)
         
         # Create a mock engine
         mock_engine = MagicMock()
