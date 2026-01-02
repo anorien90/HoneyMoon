@@ -57,19 +57,20 @@ class ForensicEngine:
     def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True):
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
-        if str(db_path).startswith("sqlite"):
+        db_url = str(db_path)
+        if db_url.lower().startswith("sqlite"):
             sqlite_timeout_seconds = 30
             sqlite_timeout_ms = int(sqlite_timeout_seconds * 1000)
             self.engine = create_engine(
-                db_path,
+                db_url,
                 echo=False,
                 connect_args={"check_same_thread": False, "timeout": sqlite_timeout_seconds}
             )
             try:
                 with self.engine.connect() as conn:
-                    conn.execute(text(f"PRAGMA busy_timeout={sqlite_timeout_ms};"))
+                    conn.execute(text("PRAGMA busy_timeout=:timeout"), {"timeout": sqlite_timeout_ms})
                     mode = conn.execute(text("PRAGMA journal_mode;")).scalar()
-                    if not mode or str(mode).lower() != "wal":
+                    if mode is None or str(mode).lower() != "wal":
                         conn.execute(text("PRAGMA journal_mode=WAL;"))
             except SQLAlchemyError as e:
                 logging.warning(
