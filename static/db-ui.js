@@ -5,8 +5,10 @@ import { apiGet } from './api.js';
 import * as ui from './ui.js';
 import * as mapModule from './map.js';
 import * as honeypotApi from './honeypot.js';
+import { updateMarkerCount } from './state.js';
 
 const DB_PANEL_ID = 'dbResultsDatabase';
+const refreshMarkerCount = () => updateMarkerCount(() => mapModule.getMarkerCount ? mapModule.getMarkerCount() : 0);
 
 function el(q) { return document.getElementById(q); }
 
@@ -82,7 +84,7 @@ export function renderSearchResults(results, type) {
   if (! results || ! results.length) {
     listEl.innerHTML = '<div class="muted small">No results</div>';
     mapModule.clearMap();
-    updateMarkerCount();
+    refreshMarkerCount();
     return;
   }
 
@@ -153,16 +155,10 @@ export function renderSearchResults(results, type) {
       mapModule.drawPath(coords);
       mapModule.fitToMarkers();
     }
-    updateMarkerCount();
+    refreshMarkerCount();
   } catch (e) {
     console.error('Error plotting search results on map', e);
   }
-}
-
-// Helper to update marker count consistently
-function updateMarkerCount() {
-  const markerCountEl = el('markerCount');
-  if (markerCountEl) markerCountEl.innerText = String(mapModule.getMarkerCount ?  mapModule.getMarkerCount() : 0);
 }
 
 export async function viewNodeDetail(ip) {
@@ -217,7 +213,7 @@ export async function viewNodeDetail(ip) {
       mapModule.clearMap();
       mapModule.addMarkerForNode(data.node, 'middle');
       if (mapModule.getMarkerCount && mapModule.getMarkerCount() > 0) mapModule.fitToMarkers();
-      updateMarkerCount();
+      refreshMarkerCount();
     }
   } catch (err) {
     ui.setLoading(false);
@@ -320,10 +316,10 @@ export async function plotAnalysisHops(session) {
     const node = nodes[c.ip] || { ip: c.ip, latitude: c.lat, longitude: c.lon };
     mapModule.addMarkerForNode(node, role);
   });
-  mapModule.drawPath(coords. map(c => ({ lat: c.lat, lon: c.lon, hop: c.hop })));
+  mapModule.drawPath(coords.map(c => ({ lat: c.lat, lon: c.lon, hop: c.hop })));
   mapModule.fitToMarkers();
   ui.toast('Analysis hops plotted');
-  updateMarkerCount();
+  refreshMarkerCount();
 
   // Add pinned cards for each hop node (from old version)
   for (const ip in nodes) {
