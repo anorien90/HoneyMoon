@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 import logging
 from sqlalchemy import create_engine, or_, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import sessionmaker
 import json
 import hashlib
@@ -534,11 +534,42 @@ class ForensicEngine:
     # -------------------------
     # Node / IP enrichment and other existing methods
     # -------------------------
+    def _recover_node_on_integrity_error(self, session, ip, seen_time=None):
+        try:
+            session.rollback()
+        except SQLAlchemyError as e:
+            logging.warning("Rollback failed during node recovery for %s: %s", ip, e)
+
+        node = session.query(NetworkNode).filter_by(ip=ip).first()
+        if node:
+            if seen_time:
+                node.last_seen = seen_time
+                node.seen_count = (node.seen_count or 0) + 1
+            return node
+
+        if seen_time:
+            try:
+                node = NetworkNode(ip=ip, first_seen=seen_time, last_seen=seen_time, seen_count=1)
+                session.add(node)
+                session.flush()
+            except IntegrityError as err:
+                logging.warning("IntegrityError during recovery for NetworkNode %s", ip)
+                try:
+                    session.rollback()
+                except SQLAlchemyError as e:
+                    logging.warning("Rollback failed during recovery IntegrityError for %s: %s", ip, e)
+                node = session.query(NetworkNode).filter_by(ip=ip).first()
+                if not node:
+                    raise err
+
+        return node
+
     def get_node_from_db_or_web(self, ip, session=None):
         session = session or self.db
         if not ip:
             return None
 
+        now = datetime.now(timezone.utc)
         node = session.query(NetworkNode).filter_by(ip=ip).first()
 
         needs_refresh = False
@@ -557,10 +588,16 @@ class ForensicEngine:
 
             if not node:
                 node = NetworkNode(ip=ip)
-                node.first_seen = datetime.now(timezone.utc)
+                node.first_seen = now
                 node.seen_count = 0
                 session.add(node)
-                session.flush()
+                try:
+                    session.flush()
+                except IntegrityError:
+                    logging.warning("IntegrityError creating NetworkNode %s; attempting recovery", ip)
+                    node = self._recover_node_on_integrity_error(session, ip, seen_time=now)
+                    if not node:
+                        return None
 
             org_name = intel.get('organization') or (intel.get('rdap') or {}).get('org_full_name')
             if org_name:
@@ -578,12 +615,12 @@ class ForensicEngine:
             node.longitude = (intel.get('geo') or {}).get('lon') or node.longitude
             node.is_tor_exit = self.check_tor(ip)
             node.extra_data = intel.get('rdap') or node.extra_data or {}
-            node.last_seen = datetime.now(timezone.utc)
+            node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
 
             session.commit()
         else:
-            node.last_seen = datetime.now(timezone.utc)
+            node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
             session.commit()
 
@@ -598,7 +635,13 @@ class ForensicEngine:
         if not node:
             node = NetworkNode(ip=ip, first_seen=now, last_seen=now, seen_count=1)
             session.add(node)
-            session.flush()
+            try:
+                session.flush()
+            except IntegrityError:
+                logging.warning("IntegrityError creating minimal NetworkNode %s; attempting recovery", ip)
+                node = self._recover_node_on_integrity_error(session, ip, seen_time=now)
+                if not node:
+                    return None
         else:
             node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
@@ -818,8 +861,12 @@ class ForensicEngine:
                 node = self.get_node_from_db_or_web(wa.remote_addr, session=session) if enrich else self.ensure_node_minimal(wa.remote_addr, seen_time=ts, session=session)
                 if node:
                     wa.node = node
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning("Error resolving node for %s: %s", wa.remote_addr, e)
+                try:
+                    session.rollback()
+                except SQLAlchemyError as rb_err:
+                    logging.warning("Rollback failed after node resolution error for %s: %s", wa.remote_addr, rb_err)
 
         session.add(wa)
         session.flush()
