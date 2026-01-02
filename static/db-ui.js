@@ -169,7 +169,7 @@ export async function viewNodeDetail(ip) {
   if (!ip) return;
   ui.setLoading(true, 'Loading node…');
   try {
-    const res = await apiGet(`/api/v1/db/node? ip=${encodeURIComponent(ip)}&limit=50`, { timeout: 30000, retries: 2 });
+    const res = await apiGet(`/api/v1/db/node?ip=${encodeURIComponent(ip)}&limit=50`, { timeout: 30000, retries: 2 });
     ui.setLoading(false);
     if (!res.ok) {
       ui.showModal({ title: `Node ${ip}`, text: res.error || `Error:  ${res.status}`, allowPin: false });
@@ -205,8 +205,8 @@ export async function viewNodeDetail(ip) {
       hpBtns.forEach(btn => {
         const id = btn.getAttribute('data-id');
         if (!id) return;
-        btn. addEventListener('click', () => {
-          window.dispatchEvent(new CustomEvent('honeypot: view', { detail: { id } }));
+        btn.addEventListener('click', () => {
+          window.dispatchEvent(new CustomEvent('honeypot:view', { detail: { id } }));
           ui.hideModal();
         });
         btn.style.cursor = 'pointer';
@@ -297,7 +297,7 @@ export async function plotAnalysisHops(session) {
     const ip = h.ip;
     if (! ip) continue;
     try {
-      const res = await apiGet(`/api/v1/locate? ip=${encodeURIComponent(ip)}`, { retries: 2 });
+      const res = await apiGet(`/api/v1/locate?ip=${encodeURIComponent(ip)}`, { retries: 2 });
       if (res.ok && res.data && res.data.node) {
         nodes[ip] = res.data.node;
         if (res.data.node.latitude != null && res.data.node.longitude != null) {

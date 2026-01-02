@@ -32,7 +32,7 @@ export async function listHoneypotSessions(limit = 100) {
       div.innerHTML = `<div><strong>${s.id}</strong> — ${s.src_ip} ${s.username ? ' • ' + s.username : ''}${nodeCached}</div>
                      <div class="meta">${s.start_ts ?  s.start_ts :  ''} ${s.end_ts ? ' • ' + s.end_ts :  ''} ${s.auth_success ? ' • ' + s.auth_success : ''} • ${s.raw_events_count || 0} events</div>`;
       div.addEventListener('click', () => {
-        window.dispatchEvent(new CustomEvent('honeypot: view', { detail: { id:  s.id } }));
+        window.dispatchEvent(new CustomEvent('honeypot:view', { detail: { id: s.id } }));
       });
       div.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') window.dispatchEvent(new CustomEvent('honeypot:view', { detail: { id: s.id } })); });
       frag.appendChild(div);
