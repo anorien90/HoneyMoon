@@ -27,9 +27,17 @@ DEFAULT_STATIC_DIR = os.path.join(BASE_DIR, "static")
 def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str:
     if env_value is not None:
         candidate = os.path.abspath(env_value)
+        try:
+            if os.path.commonpath([BASE_DIR, candidate]) != BASE_DIR:
+                logger.warning("%s path is outside the application directory; falling back to defaults", label)
+                return fallback
+        except ValueError:
+            logger.warning("%s path is not comparable to application root; falling back to defaults", label)
+            return fallback
         if os.path.isdir(candidate):
             return candidate
-        logger.warning("%s path '%s' is invalid or inaccessible; falling back to '%s'", label, candidate, fallback)
+        sanitized = os.path.relpath(candidate, BASE_DIR)
+        logger.warning("%s path '%s' is invalid or inaccessible; falling back to defaults", label, sanitized)
     return fallback
 
 env_templates = os.environ.get("IPMAP_TEMPLATES")
