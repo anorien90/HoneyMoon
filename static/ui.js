@@ -246,7 +246,20 @@ export function renderSearchHistory() {
 // ============================================
 
 export function resetSelectedUI() {
-  ['selIp', 'selHost', 'selOrg', 'selASN', 'selCC', 'selPorts', 'selOs', 'selHttp', 'selTags', 'selFirst', 'selLast', 'selCount']. forEach(id => {
+  [
+    'selIp',
+    'selHost',
+    'selOrg',
+    'selASN',
+    'selCC',
+    'selPorts',
+    'selOs',
+    'selHttp',
+    'selTags',
+    'selFirst',
+    'selLast',
+    'selCount'
+  ].forEach(id => {
     const el = $(id);
     if (el) el.textContent = '—';
   });
@@ -268,9 +281,9 @@ export function setSelectedNodeUI(node) {
     
     setText('selIp', node.ip || '—');
     setText('selHost', node.hostname || '—');
-    setText('selOrg', node.organization_obj?. name || node.organization || '—');
-    setText('selASN', node. asn || node.isp || '—');
-    setText('selCC', [node.city, node.country]. filter(Boolean).join(', ') || '—');
+    setText('selOrg', node.organization_obj?.name || node.organization || '—');
+    setText('selASN', node.asn || node.isp || '—');
+    setText('selCC', [node.city, node.country].filter(Boolean).join(', ') || '—');
     const summary = summarizeNodeDetails(node);
     setText('selPorts', summary.ports || '—');
     setText('selOs', summary.os || '—');
@@ -278,7 +291,7 @@ export function setSelectedNodeUI(node) {
     setText('selTags', summary.tags || '—');
     setText('selFirst', node.first_seen || '—');
     setText('selLast', node.last_seen || '—');
-    setText('selCount', node.seen_count ??  '—');
+    setText('selCount', node.seen_count ?? '—');
 
     const reg = node.organization_obj?.extra_data?.company_search || node.extra_data?.company_search;
     const selRegistryEl = $('selRegistry');

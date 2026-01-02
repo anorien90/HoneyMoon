@@ -142,7 +142,7 @@ const summarizeTags = (node) => {
 
 // Cached popup template (from old version)
 const popupTemplate = (node) => {
-  const orgName = node.organization_obj?. name || node.organization || '';
+  const orgName = node.organization_obj?.name || node.organization || '';
   const location = [node.city, node.country].filter(Boolean).join(', ');
   const ports = summarizePorts(node);
   const os = summarizeOs(node);
