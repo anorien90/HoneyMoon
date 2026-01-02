@@ -1,7 +1,7 @@
 // Optimized Map module with marker clustering, lazy loading, and better memory management
 // Merged: combines marker pool from old version with cleaner new version structure
 
-import { escapeHtml, truncate } from './util.js';
+import { escapeHtml, summarizeNodeDetails } from './util.js';
 
 let map = null;
 let markers = [];
@@ -101,52 +101,15 @@ export function getMarkerCount() {
   return markers.length;
 }
 
-const summarizePorts = (node) => {
-  const banners = node.extra_data?.banners || {};
-  if (Object.keys(banners).length) {
-    return Object.entries(banners).slice(0, 5).map(([p, b]) => `${escapeHtml(String(p))}${b ? ` (${escapeHtml(truncate(String(b), 40))})` : ''}`).join(', ');
-  }
-  const services = node.extra_data?.fingerprints?.nmap?.services || {};
-  if (Object.keys(services).length) {
-    return Object.entries(services).slice(0, 5).map(([p, info]) => {
-      const svc = info?.name || info?.product || info?._name;
-      return `${escapeHtml(String(p))}${svc ? ` ${escapeHtml(truncate(String(svc), 28))}` : ''}`;
-    }).join(', ');
-  }
-  return '';
-};
-
-const summarizeOs = (node) => {
-  const osMatch = Array.isArray(node.extra_data?.fingerprints?.nmap?.osmatch) && node.extra_data.fingerprints.nmap.osmatch.length
-    ? node.extra_data.fingerprints.nmap.osmatch[0]
-    : null;
-  if (!osMatch) return '';
-  return `${escapeHtml(osMatch.name || 'Unknown')}${osMatch.accuracy ? ` (${escapeHtml(String(osMatch.accuracy))}%)` : ''}`;
-};
-
-const summarizeHttp = (node) => {
-  const fp = node.extra_data?.fingerprints || {};
-  const server = fp.http?.server || fp.http?.headers?.Server;
-  const cipher = Array.isArray(fp.https?.cipher) ? fp.https.cipher[0] : fp.https?.cipher;
-  const issuer = fp.https?.cert_subject?.commonName || fp.https?.cert_subject?.CN;
-  return [server, cipher, issuer].filter(Boolean).map(v => escapeHtml(truncate(String(v), 50))).join(' • ');
-};
-
-const summarizeTags = (node) => {
-  const tags = [];
-  if (node.is_tor_exit) tags.push('TOR exit');
-  if (node.extra_data?.fingerprints?.http_well_known?.['/.git/config']?.status_code === 200) tags.push('Exposed .git');
-  return tags;
-};
-
 // Cached popup template (from old version)
 const popupTemplate = (node) => {
   const orgName = node.organization_obj?.name || node.organization || '';
   const location = [node.city, node.country].filter(Boolean).join(', ');
-  const ports = summarizePorts(node);
-  const os = summarizeOs(node);
-  const http = summarizeHttp(node);
-  const tags = summarizeTags(node);
+  const summary = summarizeNodeDetails(node);
+  const ports = summary.ports ? escapeHtml(summary.ports) : '';
+  const os = summary.os ? escapeHtml(summary.os) : '';
+  const http = summary.http ? escapeHtml(summary.http) : '';
+  const tags = summary.tags ? summary.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
   
   return `<div class="map-popup" style="min-width:240px">
     <div class="font-medium">${escapeHtml(node.ip || 'Unknown')}${node.hostname ? ` • ${escapeHtml(node.hostname)}` : ''}</div>
