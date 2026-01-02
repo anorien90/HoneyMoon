@@ -534,6 +534,19 @@ class ForensicEngine:
     # -------------------------
     # Node / IP enrichment and other existing methods
     # -------------------------
+    def _recover_node_on_integrity_error(self, session, ip, seen_time=None):
+        try:
+            session.rollback()
+        except Exception:
+            pass
+
+        node = session.query(NetworkNode).filter_by(ip=ip).first()
+        if node and seen_time:
+            node.last_seen = seen_time
+            node.seen_count = (node.seen_count or 0) + 1
+
+        return node
+
     def get_node_from_db_or_web(self, ip, session=None):
         session = session or self.db
         if not ip:
@@ -563,10 +576,9 @@ class ForensicEngine:
                 try:
                     session.flush()
                 except IntegrityError:
-                    session.rollback()
-                    node = session.query(NetworkNode).filter_by(ip=ip).first()
+                    node = self._recover_node_on_integrity_error(session, ip)
                     if not node:
-                        raise
+                        return None
 
             org_name = intel.get('organization') or (intel.get('rdap') or {}).get('org_full_name')
             if org_name:
@@ -607,12 +619,9 @@ class ForensicEngine:
             try:
                 session.flush()
             except IntegrityError:
-                session.rollback()
-                node = session.query(NetworkNode).filter_by(ip=ip).first()
+                node = self._recover_node_on_integrity_error(session, ip, seen_time=now)
                 if not node:
                     return None
-                node.last_seen = now
-                node.seen_count = (node.seen_count or 0) + 1
         else:
             node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
