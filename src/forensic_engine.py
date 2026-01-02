@@ -541,17 +541,24 @@ class ForensicEngine:
             pass
 
         node = session.query(NetworkNode).filter_by(ip=ip).first()
-        if node and seen_time:
-            node.last_seen = seen_time
-            node.seen_count = (node.seen_count or 0) + 1
-        elif not node and seen_time:
+        if node:
+            if seen_time:
+                node.last_seen = seen_time
+                node.seen_count = (node.seen_count or 0) + 1
+            return node
+
+        if seen_time:
             try:
                 node = NetworkNode(ip=ip, first_seen=seen_time, last_seen=seen_time, seen_count=1)
                 session.add(node)
                 session.flush()
             except IntegrityError:
                 logging.warning("IntegrityError during recovery for NetworkNode %s", ip)
-                node = None
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+                node = session.query(NetworkNode).filter_by(ip=ip).first()
 
         return node
 
