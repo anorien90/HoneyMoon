@@ -1,0 +1,234 @@
+/* Optimized styles: improved consistency, accessibility, and responsiveness.  */
+
+:root {
+  --card-bg: #ffffff;
+  --page-bg: linear-gradient(180deg,#f8fafc 0%, #eef2ff 100%);
+  --muted: #6b7280;
+  --accent: #2563eb;
+  --accent-2: #ff7b00;
+  --glass: rgba(255,255,255,0.6);
+  --card-radius: .75rem;
+  --shadow: 0 6px 18px rgba(14, 30, 37, 0.06);
+}
+[data-theme="dark"] {
+  --card-bg: #2b3240;
+  --page-bg: linear-gradient(180deg,#071024 0%, #061528 100%);
+  --muted: #9ca3af;
+  --accent: #60a5fa;
+  --accent-2: #ffb86b;
+  --glass: rgba(20,27,38,0.6);
+  --shadow: 0 8px 30px rgba(2,6,23,0.6);
+}
+
+.main-logo { height: 26px; width: auto; }
+
+#ipInput { 
+  width: auto; 
+  max-width: 9rem;
+  padding: .5rem 1rem; 
+  border: 1px solid rgba(0,0,0,0.12); 
+  border-radius: .5rem; 
+  font-size: 1rem; 
+}
+
+#honeypotSessionCard { 
+  display: flex; 
+  background: var(--card-bg); 
+  border-radius: var(--card-radius); 
+  box-shadow: var(--shadow); 
+  padding: 1rem; 
+  max-width: 300px; 
+  z-index: 1000; 
+}
+
+html,body { height: 100%; }
+body { background: var(--page-bg); font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding:1.5rem; }
+.card { background: var(--card-bg); border-radius: var(--card-radius); box-shadow: var(--shadow); resize: both; overflow: auto; min-width: 200px; }
+.card .card-header { display: flex; gap: .5rem; align-items: center; justify-content:space-between; }
+.card-body { }
+.muted { color: var(--muted); }
+
+/* Map sizing for consistency */
+#map { height: calc(45vh); min-height: 240px; border-radius: .5rem; width: 100%; }
+.small { font-size: .875rem; }
+.hop-row:hover { background: rgba(255, 203, 107, 0.06); }
+.result-row:hover { background: rgba(96,165,250,0.06); cursor: pointer; }
+.spin { border: 4px solid rgba(0,0,0,0.08); border-top-color: var(--accent); border-radius: 9999px; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Modal improvements - FIXED: inset=0 to inset: 0 */
+#modalContainer.modal-hidden { display: none; }
+#modalContainer.modal-visible { position:fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index:2000; background: rgba(2,6,23,0.4); padding: 1rem; }
+.modal-card { width: min(900px, 98%); max-height: 90vh; overflow: auto; }
+
+/* Toast accessibility */
+#toast { position: fixed; right: 1rem; bottom: 1rem; z-index: 9999; max-width: 22rem; }
+.toast { background: #111827; color: white; padding: .75rem 1rem; border-radius: .5rem; box-shadow: 0 6px 18px rgba(0,0,0,0.12); margin-top: .5rem; font-size: .9rem; }
+
+/* Focus styles for accessibility */
+input:focus, select:focus, button:focus { outline: 3px solid rgba(37,99,235,0.12); outline-offset: 2px; }
+
+/* Toolbar consistency */
+.toolbar { display:flex; gap: .5rem; align-items:center; resize: none;}
+.toolbar .pill { display:inline-flex; align-items:center; gap:.5rem; padding:.45rem .6rem; border-radius: 9999px; background: var(--glass); }
+.toolbar .action { background: var(--accent); color: white; padding:.45rem .75rem; border-radius:.5rem; }
+
+/* Scroll areas */
+.compact-scroll { max-height: 44vh; overflow: auto; }
+
+/* Sidebar collapse */
+.sidebar-collapsed { display:none !important; }
+
+/* Workspace pinned area */
+.pinned-area {
+  position: relative;
+  min-height: 120px;
+  padding: 0.5rem;
+  border-radius: .5rem;
+  background: transparent;
+}
+
+.pinned-area.workspace {
+  min-height: 70vh;
+  background: rgba(255,255,255,0.6);
+  border: 1px dashed rgba(0,0,0,0.08);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.05);
+}
+
+[data-theme="dark"] .pinned-area.workspace {
+  background: rgba(20,27,38,0.6);
+  border-color: rgba(255,255,255,0.08);
+}
+/* ...existing styles above... */
+
+/* Panel polish */
+.pinned-card {
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+}
+[data-theme="dark"] .pinned-card {
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+}
+
+.pinned-card .pin-header {
+  background: var(--glass);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+[data-theme="dark"] .pinned-card .pin-header {
+  border-color: rgba(255,255,255,0.08);
+}
+
+.pinned-card .pin-controls button {
+  background: transparent;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.pinned-card .pin-controls button:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* Pinned card header */
+.pinned-card .pin-body { padding: 0.5rem 0; overflow: auto; flex: 1 1 auto; }
+.pinned-card .pin-header { display: flex; align-items:center; justify-content:space-between; padding: 0.5rem; cursor:move; user-select:none; }
+.pinned-card .pin-controls { display:flex; gap: 6px; align-items:center; }
+
+/* Resize handle */
+.pinned-card .resize-handle,
+.card .resize-handle {
+  width: 12px;
+  height: 12px;
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  cursor: se-resize;
+  background: rgba(0,0,0,0.06);
+  border-radius: 2px;
+}
+
+/* Collapsed sizes */
+.pinned-card.card-collapsed {
+  width: 140px !important;
+  height: 40px !important;
+}
+
+/* Docked card */
+.pinned-card.docked {
+  position: relative;
+  width: auto !important;
+  height: auto !important;
+  margin-bottom: 0.75rem;
+}
+
+/* Grid mode */
+.pinned-area.grid-mode {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.pinned-area.grid-mode .pinned-card {
+  position: relative !important;
+  left: 0 !important;
+  top: 0 !important;
+  cursor: grab;
+}
+.pinned-card.dragging {
+  opacity: 0.65;
+}
+.pinned-card.drag-over {
+  outline: 2px dashed var(--accent);
+}
+
+/* Active highlight */
+.pinned-card.active {
+  box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+}
+
+/* Modal/pinned transitions */
+.pinned-card,
+.modal-card {
+  transition: all 0.12s ease;
+}
+
+/* Button helpers */
+.pin-close { background: transparent; }
+.pin-collapse { background: transparent; }
+
+/* Accessibility for buttons */
+.pinned-card button { background: transparent; border: 1px solid rgba(0,0,0,0.06); padding: .25rem .5rem; border-radius: .375rem; }
+
+/* Tab styles */
+.tab-btn { background: transparent; border: 1px solid rgba(0,0,0,0.08); cursor: pointer; transition: all 0.15s ease; }
+.tab-btn.tab-active { background: var(--accent); color: white; border-color: var(--accent); }
+.tab-panel.hidden { display: none; }
+
+/* Hidden originals once floated */
+.card.hidden-placeholder { display: none !important; }
+
+/* Responsive grid */
+@media (max-width: 1100px) {
+  #map { min-height: 360px; height: 58vh; }
+  .card { padding: .75rem; }
+  .toolbar { flex-wrap: wrap; }
+}
+
+/* Row hovers */
+.hop-row, .result-row { transition: background .12s ease; }
+.clickable { cursor: pointer; }
+
+/* Honeypot rows */
+.hp-row { padding:.5rem; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.hp-row .meta { color: var(--muted); font-size: 0.85rem; }
+
+/* Card collapse - FIXED: removed extra spaces in selectors */
+.card-collapsed .card-body,
+.card-collapsed .pin-body,
+.card-collapsed .modal-content {
+  display: none;
+}
+.card-collapsed { overflow: hidden; }
+
+/* Pinned card header */
+.card .card-header .card-float { margin-left: .5rem; }
+
