@@ -259,7 +259,7 @@ async function locateAttacker(ip, opts = {}) {
   updateMarkerCount();
   
   if (!opts.silent) {
-    window.dispatchEvent(new CustomEvent('ui: switchTab', { detail: { name: 'map' } }));
+    window.dispatchEvent(new CustomEvent('ui:switchTab', { detail: { name: 'map' } }));
     ui.toast(`Attacker ${ip} highlighted`);
   }
   return true;
