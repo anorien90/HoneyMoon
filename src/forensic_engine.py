@@ -72,6 +72,7 @@ class ForensicEngine:
                     mode = conn.execute(text("PRAGMA journal_mode;")).scalar()
                     if mode is None or str(mode).lower() != "wal":
                         conn.execute(text("PRAGMA journal_mode=WAL;"))
+                    conn.commit()
             except SQLAlchemyError as e:
                 logging.warning(
                     "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
