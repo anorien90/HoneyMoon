@@ -6,7 +6,7 @@ export async function listSessions(limit = 100) {
 }
 
 export async function viewSession(id) {
-  return apiGet(`/api/v1/honeypot/session?id=${encodeURIComponent(id)}`, { timeout: 30000, retries: 2 });
+  return apiGet(`/api/v1/honeypot/session? id=${encodeURIComponent(id)}`, { timeout: 30000, retries: 2 });
 }
 
 export async function ingestCowrie(path) {
@@ -18,7 +18,7 @@ export async function ingestPcap(path, filter_host = null) {
 }
 
 export function artifactDownloadUrl(name) {
-  return `/api/v1/honeypot/artifact?name=${encodeURIComponent(name)}`;
+  return `/api/v1/honeypot/artifact? name=${encodeURIComponent(name)}`;
 }
 
 export async function listFlows(limit = 100) {

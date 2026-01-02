@@ -1,2 +1,7 @@
 flask
+sqlalchemy
 iso3166
+requests
+whois
+scapy
+python-nmap

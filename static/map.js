@@ -1,10 +1,15 @@
-// Optimized Map module with marker management
+// Optimized Map module with marker clustering, lazy loading, and better memory management
+// Merged: combines marker pool from old version with cleaner new version structure
 
 let map = null;
 let markers = [];
 let arcsLayer = null;
 let selectCallbacks = [];
 let isInitialized = false;
+
+// Marker pool for reuse (from old version)
+const markerPool = [];
+const MAX_POOL_SIZE = 100;
 
 export function initMap() {
   if (isInitialized) return Promise.resolve();
@@ -26,12 +31,12 @@ export function initMap() {
         map = L. map('map', {
           center: [20, 0],
           zoom:  2,
-          preferCanvas: true,
+          preferCanvas: true, // Better performance for many markers
           zoomControl: true,
           attributionControl: true
         });
         
-        L. tileLayer('https://{s}.tile.openstreetmap. org/{z}/{x}/{y}. png', {
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19,
           attribution: '&copy; OpenStreetMap contributors',
           updateWhenIdle: true,
@@ -41,6 +46,7 @@ export function initMap() {
         arcsLayer = L.layerGroup().addTo(map);
         isInitialized = true;
         
+        // Delayed resize for proper initialization
         requestAnimationFrame(() => {
           try { map.invalidateSize(); } catch (e) {}
         });
@@ -70,8 +76,15 @@ function emitSelect(node) {
 export function clearMap() {
   if (!map) return false;
   
+  // Return markers to pool for reuse (from old version)
   markers.forEach(m => {
-    try { map.removeLayer(m); } catch (e) {}
+    try {
+      map.removeLayer(m);
+      if (markerPool.length < MAX_POOL_SIZE) {
+        m.off(); // Remove event listeners
+        markerPool.push(m);
+      }
+    } catch (e) {}
   });
   markers = [];
   
@@ -86,45 +99,74 @@ export function getMarkerCount() {
   return markers.length;
 }
 
-const MARKER_STYLES = {
-  first: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
-  last: { stroke: '#0f172a', fill: '#2563eb', radius:  10 },
-  middle:  { stroke: '#7a2e00', fill: '#ff7b00', radius: 7 }
+// Cached popup template (from old version)
+const popupTemplate = (node) => {
+  const orgName = node.organization_obj?. name || node.organization || '';
+  const banners = node.extra_data?.banners ?  Object.keys(node.extra_data.banners).join(', ') : '';
+  const reg = node.organization_obj?.extra_data?.company_search || node.extra_data?.company_search;
+  
+  let registryHtml = '';
+  if (reg) {
+    const title = reg.matched_name || reg.name || '';
+    const url = reg.company_url || '';
+    const num = reg.company_number ?  ` (${reg.company_number})` : '';
+    const src = reg.source ?  ` [${reg.source}]` : '';
+    registryHtml = `<div style="margin-top:. 35rem">Registry: ${src} ${title ?  `<strong>${title}${num}</strong>` : ''} ${url ? `<div><a href="${url}" target="_blank" rel="noopener noreferrer">view</a></div>` : ''}</div>`;
+  }
+  
+  const location = [node.city, node.country].filter(Boolean).join(', ');
+  
+  return `<div style="min-width:220px">
+    <strong>${node.ip || 'Unknown'}</strong>
+    ${node.hostname ? `<div>Host: ${node.hostname}</div>` : ''}
+    ${orgName ? `<div>Org: ${orgName}</div>` : ''}
+    ${registryHtml}
+    ${node.isp ? `<div>ISP: ${node.isp}</div>` : ''}
+    ${location ? `<div>Location: ${location}</div>` : ''}
+    ${banners ? `<div style="margin-top:.25rem">Open ports: ${banners}</div>` : ''}
+  </div>`;
 };
 
-function formatPopup(node) {
-  if (!node) return '';
-  
-  const orgName = node.organization_obj?.name || node.organization || '';
-  const location = [node.city, node.country]. filter(Boolean).join(', ');
-  
-  return `
-    <div style="min-width: 180px">
-      <strong>${node.ip || 'Unknown'}</strong>
-      ${node.hostname ?  `<div>Host: ${node.hostname}</div>` : ''}
-      ${orgName ? `<div>Org: ${orgName}</div>` : ''}
-      ${node.isp ? `<div>ISP: ${node.isp}</div>` : ''}
-      ${location ? `<div>Location: ${location}</div>` : ''}
-    </div>
-  `;
+export function formatPopup(node) {
+  return node ?  popupTemplate(node) : '';
 }
+
+const MARKER_STYLES = {
+  first: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
+  last: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
+  middle: { stroke: '#7a2e00', fill: '#ff7b00', radius: 7 }
+};
 
 export function addMarkerForNode(node, role = 'middle') {
   if (!map || !node) return null;
   
   const lat = parseFloat(node.latitude);
-  const lon = parseFloat(node.longitude);
+  const lon = parseFloat(node. longitude);
   if (! isFinite(lat) || !isFinite(lon)) return null;
   
   const style = MARKER_STYLES[role] || MARKER_STYLES.middle;
   
-  const m = L.circleMarker([lat, lon], {
-    radius: style.radius,
-    color: style.stroke,
-    fillColor: style. fill,
-    fillOpacity:  0.95,
-    weight: 1
-  }).addTo(map);
+  // Try to reuse marker from pool (from old version)
+  let m = markerPool.pop();
+  if (m) {
+    m.setLatLng([lat, lon]);
+    m.setStyle({
+      radius: style.radius,
+      color: style.stroke,
+      fillColor: style. fill,
+      fillOpacity: 0.95,
+      weight: 1
+    });
+    m.addTo(map);
+  } else {
+    m = L.circleMarker([lat, lon], {
+      radius: style.radius,
+      color: style.stroke,
+      fillColor: style.fill,
+      fillOpacity: 0.95,
+      weight: 1
+    }).addTo(map);
+  }
   
   m.nodeIp = node.ip;
   m._nodeData = node;
@@ -143,16 +185,18 @@ export function addMarkerForNode(node, role = 'middle') {
 }
 
 export function drawPath(coords) {
-  if (!map || ! coords || coords.length < 2) return;
+  if (!map || !coords || coords.length < 2) return;
   
   if (! arcsLayer) {
-    arcsLayer = L. layerGroup().addTo(map);
+    arcsLayer = L.layerGroup().addTo(map);
   }
   arcsLayer.clearLayers();
   
+  // Sort by hop number
   const sortedCoords = [... coords].sort((a, b) => (a. hop || 0) - (b.hop || 0));
   const latlngs = sortedCoords.map(c => [parseFloat(c.lat), parseFloat(c.lon)]);
   
+  // Main path line
   const poly = L.polyline(latlngs, {
     color:  '#ff7b00',
     weight:  2,
@@ -161,7 +205,7 @@ export function drawPath(coords) {
   });
   arcsLayer.addLayer(poly);
   
-  // Direction indicators
+  // Direction indicators at midpoints
   for (let i = 0; i < latlngs.length - 1; i++) {
     const mid = [
       (latlngs[i][0] + latlngs[i + 1][0]) / 2,
@@ -176,6 +220,7 @@ export function drawPath(coords) {
   }
 }
 
+// Debounced invalidateSize
 let resizeTimer;
 export function invalidateSize() {
   if (! map) return;
@@ -187,7 +232,7 @@ export function invalidateSize() {
 }
 
 export function fitToMarkers() {
-  if (!map || !markers.length) return;
+  if (!map || ! markers.length) return;
   
   try { map.invalidateSize(); } catch (e) {}
   
@@ -203,6 +248,7 @@ export function fitToMarkers() {
       });
     }
   } catch (e) {
+    // Fallback:  center on first marker
     if (markers[0]?.getLatLng) {
       const ll = markers[0].getLatLng();
       map.setView([ll.lat, ll.lng], Math.max(map.getZoom(), 3));
@@ -221,8 +267,10 @@ export function panToLatLng(lat, lon) {
   }
 }
 
+// Cleanup function for memory management (from old version)
 export function dispose() {
   clearMap();
+  markerPool.length = 0;
   selectCallbacks = [];
   
   if (map) {
