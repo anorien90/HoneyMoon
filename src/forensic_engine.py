@@ -58,7 +58,8 @@ class ForensicEngine:
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
         db_url = str(db_path)
-        if db_url.lower().startswith("sqlite"):
+        db_url_lower = db_url.lower()
+        if db_url_lower.startswith("sqlite:"):
             sqlite_timeout_seconds = 30
             sqlite_timeout_ms = int(sqlite_timeout_seconds * 1000)
             self.engine = create_engine(
@@ -69,10 +70,7 @@ class ForensicEngine:
             try:
                 with self.engine.connect() as conn:
                     conn.execute(text("PRAGMA busy_timeout=:timeout"), {"timeout": sqlite_timeout_ms})
-                    mode = conn.execute(text("PRAGMA journal_mode;")).scalar()
-                    if mode is None or str(mode).lower() != "wal":
-                        conn.execute(text("PRAGMA journal_mode=WAL;"))
-                    conn.commit()
+                    conn.execute(text("PRAGMA journal_mode=WAL;")).scalar()
             except SQLAlchemyError as e:
                 logging.warning(
                     "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
