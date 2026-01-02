@@ -550,6 +550,7 @@ class ForensicEngine:
                 session.add(node)
                 session.flush()
             except IntegrityError:
+                logging.warning("IntegrityError during recovery for NetworkNode %s", ip)
                 node = None
 
         return node
@@ -559,6 +560,7 @@ class ForensicEngine:
         if not ip:
             return None
 
+        now = datetime.now(timezone.utc)
         node = session.query(NetworkNode).filter_by(ip=ip).first()
 
         needs_refresh = False
@@ -577,14 +579,14 @@ class ForensicEngine:
 
             if not node:
                 node = NetworkNode(ip=ip)
-                node.first_seen = datetime.now(timezone.utc)
+                node.first_seen = now
                 node.seen_count = 0
                 session.add(node)
                 try:
                     session.flush()
                 except IntegrityError:
                     logging.warning("IntegrityError creating NetworkNode %s; attempting recovery", ip)
-                    node = self._recover_node_on_integrity_error(session, ip)
+                    node = self._recover_node_on_integrity_error(session, ip, seen_time=now)
                     if not node:
                         return None
 
@@ -604,12 +606,12 @@ class ForensicEngine:
             node.longitude = (intel.get('geo') or {}).get('lon') or node.longitude
             node.is_tor_exit = self.check_tor(ip)
             node.extra_data = intel.get('rdap') or node.extra_data or {}
-            node.last_seen = datetime.now(timezone.utc)
+            node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
 
             session.commit()
         else:
-            node.last_seen = datetime.now(timezone.utc)
+            node.last_seen = now
             node.seen_count = (node.seen_count or 0) + 1
             session.commit()
 
