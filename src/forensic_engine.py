@@ -5,7 +5,7 @@ import requests
 import whois
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
-from sqlalchemy import create_engine, or_
+from sqlalchemy import create_engine, or_, text
 from sqlalchemy.orm import sessionmaker
 import json
 import hashlib
@@ -55,7 +55,19 @@ class ForensicEngine:
     def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True):
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
-        self.engine = create_engine(db_path, echo=False)
+        if str(db_path).startswith("sqlite"):
+            self.engine = create_engine(
+                db_path,
+                echo=False,
+                connect_args={"check_same_thread": False, "timeout": 30}
+            )
+            try:
+                with self.engine.connect() as conn:
+                    conn.execute(text("PRAGMA journal_mode=WAL;"))
+            except Exception:
+                pass
+        else:
+            self.engine = create_engine(db_path, echo=False)
 
         # store honeypot artifacts here by default
         self.honeypot_data_dir = os.environ.get("HONEY_DATA_DIR", honeypot_data_dir)
