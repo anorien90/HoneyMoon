@@ -18,6 +18,8 @@ except Exception:
     WebAccess = None
     AnalysisSession = None
 
+logger = logging.getLogger(__name__)
+
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 DEFAULT_STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -27,7 +29,7 @@ def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str
         candidate = os.path.abspath(env_value)
         if os.path.isdir(candidate):
             return candidate
-        logging.warning("%s path '%s' is invalid or inaccessible; falling back to '%s'", label, candidate, fallback)
+        logger.warning("%s path '%s' is invalid or inaccessible; falling back to '%s'", label, candidate, fallback)
     return fallback
 
 env_templates = os.environ.get("IPMAP_TEMPLATES")
