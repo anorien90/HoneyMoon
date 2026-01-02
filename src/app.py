@@ -28,8 +28,8 @@ def _resolve_path(env_value: Optional[str], fallback: str, *, label: str) -> str
     if env_value is not None:
         candidate = os.path.abspath(env_value)
         try:
-            common = os.path.commonpath([BASE_DIR, candidate])
-            if common != BASE_DIR or not candidate.startswith(BASE_DIR + os.sep):
+            rel_candidate = os.path.relpath(candidate, BASE_DIR)
+            if rel_candidate.startswith(os.pardir):
                 logger.warning("%s path is outside the application directory; falling back to defaults", label)
                 return fallback
         except ValueError:
