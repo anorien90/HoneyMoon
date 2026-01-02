@@ -12,6 +12,10 @@ import hashlib
 import threading
 import time
 import traceback
+try:
+    import maxminddb  # type: ignore
+except ImportError:
+    maxminddb = None
 
 # scapy imports (used for traceroute and optional pcap ingest)
 from scapy.all import traceroute
@@ -48,7 +52,7 @@ def _sha256_text(s: str) -> str:
 
 
 class ForensicEngine:
-    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True):
+    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True):
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
         self.engine = create_engine(db_path, echo=False)
@@ -73,13 +77,26 @@ class ForensicEngine:
         # Keep a convenience session for synchronous work (web thread). Long-running threads will create their own sessions.
         self.db = self.Session()
 
+        # GeoLite database (preferred) configuration
+        self.geolite_path = os.path.abspath(os.environ.get("GEOLITE_MMDB_PATH", os.path.join(os.getcwd(), "data", "GeoLite2-City.mmdb")))
+        self.geolite_url = os.environ.get("GEOLITE_MMDB_URL", "https://raw.githubusercontent.com/P3TERX/GeoLite.mmdb/download/GeoLite2-City.mmdb")
+        self._geolite_reader = None
+        if maxminddb:
+            self._ensure_geolite_db()
+        else:
+            print("maxminddb module not available; GeoLite lookups disabled.")
+
         # Automatic honeypot ingestion configuration
-        self.honey_auto_ingest = os.environ.get("HONEY_AUTO_INGEST", str(honey_auto_ingest)).lower() in ("1", "true", "yes", "on", True)
+        honey_flag = os.environ.get("HONEY_AUTO_INGEST", honey_auto_ingest)
+        if isinstance(honey_flag, bool):
+            self.honey_auto_ingest = honey_flag
+        else:
+            self.honey_auto_ingest = str(honey_flag).lower() in ("1", "true", "yes", "on")
         self.honey_log_path = os.environ.get("HONEY_LOG_PATH", os.path.join(self.honeypot_data_dir, "log", "cowrie.json"))
         print(f"Honeypot auto-ingest: {self.honey_auto_ingest}, log path: {self.honey_log_path}")
         try:
             self.honey_ingest_interval = int(os.environ.get("HONEY_INGEST_INTERVAL", "30"))
-        except Exception:
+        except (TypeError, ValueError, OverflowError):
             self.honey_ingest_interval = 30
 
         if self.honey_auto_ingest and self.honey_log_path:
@@ -87,6 +104,25 @@ class ForensicEngine:
             t = threading.Thread(target=self._honeypot_watcher, args=(self.honey_log_path, self.honey_ingest_interval), daemon=True)
             t.start()
             print("Started honeypot watcher thread.")
+
+        # Automatic nginx access log ingestion configuration
+        access_flag = os.environ.get("NGINX_AUTO_INGEST", nginx_auto_ingest)
+        if isinstance(access_flag, bool):
+            self.access_auto_ingest = access_flag
+        else:
+            self.access_auto_ingest = str(access_flag).lower() in ("1", "true", "yes", "on")
+        default_access_path = os.path.join(os.getcwd(), "data", "access.json")
+        self.access_log_path = os.path.abspath(os.environ.get("NGINX_LOG_PATH", default_access_path))
+        try:
+            self.access_ingest_interval = int(os.environ.get("NGINX_INGEST_INTERVAL", "30"))
+        except (TypeError, ValueError, OverflowError):
+            self.access_ingest_interval = 30
+        self._nginx_state_path = os.path.abspath(os.environ.get("NGINX_STATE_PATH", os.path.join(os.path.dirname(self.access_log_path), ".nginx_access_state.json")))
+
+        if self.access_auto_ingest and self.access_log_path:
+            t = threading.Thread(target=self._nginx_access_watcher, args=(self.access_log_path, self.access_ingest_interval), daemon=True)
+            t.start()
+            print(f"Started nginx access watcher for {self.access_log_path}")
 
     def _ensure_aware(self, dt):
         if not dt:
@@ -112,6 +148,100 @@ class ForensicEngine:
     def _save_honeypot_state(self, state):
         try:
             with open(self._honeypot_state_path, "w", encoding="utf-8") as fh:
+                json.dump(state, fh)
+        except Exception:
+            pass
+
+    # -------------------------
+    # GeoLite helpers
+    # -------------------------
+    def _ensure_geolite_db(self):
+        if not maxminddb:
+            return
+        if self._geolite_reader:
+            return
+        path = self.geolite_path
+        if not os.path.isfile(path):
+            try:
+                self._download_geolite_db(path)
+            except (requests.RequestException, OSError, RuntimeError) as e:
+                print(f"GeoLite download failed: {e}")
+                return
+        try:
+            self._geolite_reader = maxminddb.open_database(path, mode=maxminddb.MODE_AUTO)
+            print(f"Loaded GeoLite database from {path}")
+        except (OSError, ValueError) as e:
+            self._geolite_reader = None
+            print(f"GeoLite open failed: {e}")
+
+    def _download_geolite_db(self, path):
+        url = self.geolite_url
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+        except OSError as e:
+            print(f"Failed to create GeoLite directory: {e}")
+            raise
+        resp = requests.get(url, timeout=20, verify=True)
+        if resp.status_code != 200:
+            raise RuntimeError(f"GeoLite download HTTP {resp.status_code}")
+        with open(path, "wb") as fh:
+            fh.write(resp.content)
+
+    def _geolite_lookup(self, ip):
+        if not self._geolite_reader:
+            return None
+        try:
+            data = self._geolite_reader.get(ip)
+        except (ValueError, OSError, AttributeError) as e:
+            print(f"GeoLite lookup failed for {ip}: {e}")
+            return None
+        if not data:
+            return None
+
+        country = None
+        city = None
+        lat = None
+        lon = None
+        isp = None
+        asn_num = None
+        try:
+            country = data.get("country", {}).get("names", {}).get("en") or data.get("country", {}).get("iso_code")
+            city = data.get("city", {}).get("names", {}).get("en")
+            loc = data.get("location", {})
+            lat = loc.get("latitude")
+            lon = loc.get("longitude")
+            traits = data.get("traits", {})
+            isp = traits.get("isp") or traits.get("autonomous_system_organization")
+            asn_num = traits.get("autonomous_system_number")
+        except Exception:
+            pass
+
+        return {
+            "country": country,
+            "city": city,
+            "isp": isp,
+            "org": isp,
+            "as": f"AS{asn_num} {isp}" if asn_num else None,
+            "lat": lat,
+            "lon": lon
+        }
+
+    # -------------------------
+    # nginx access log watcher state helpers
+    # -------------------------
+    def _load_nginx_state(self):
+        try:
+            if os.path.isfile(self._nginx_state_path):
+                with open(self._nginx_state_path, "r", encoding="utf-8") as fh:
+                    st = json.load(fh)
+                    return {"offset": int(st.get("offset", 0)), "processed_hashes": list(st.get("processed_hashes", []))}
+        except Exception:
+            pass
+        return {"offset": 0, "processed_hashes": []}
+
+    def _save_nginx_state(self, state):
+        try:
+            with open(self._nginx_state_path, "w", encoding="utf-8") as fh:
                 json.dump(state, fh)
         except Exception:
             pass
@@ -515,6 +645,12 @@ class ForensicEngine:
 
     def lookup(self, ip):
         try:
+            geo = self._geolite_lookup(ip)
+            if geo:
+                return geo
+        except (ValueError, OSError, AttributeError) as e:
+            print(f"GeoLite lookup error for {ip}: {e}")
+        try:
             res = requests.get(f"http://ip-api.com/json/{ip}", timeout=3).json()
             if res.get("status") == "success":
                 return {
@@ -590,6 +726,76 @@ class ForensicEngine:
             print(f"Error fetching accesses for {ip}: {e}")
             return []
 
+    def _ingest_nginx_access_event(self, ev: dict, session=None, enrich=True):
+        if session is None:
+            session = self.db
+
+        ts = datetime.now(timezone.utc)
+        raw_ts = ev.get("time_local") or ev.get("timestamp") or ev.get("time")
+        if raw_ts:
+            for fmt in ("%d/%b/%Y:%H:%M:%S %z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    ts = datetime.strptime(raw_ts, fmt)
+                    ts = self._ensure_aware(ts)
+                    break
+                except Exception:
+                    continue
+
+        req = ev.get("request")
+        method = ev.get("method")
+        path = ev.get("path")
+        if req:
+            parts = req.split()
+            if not method and len(parts) >= 1:
+                method = parts[0]
+            if not path and len(parts) >= 2:
+                path = parts[1]
+
+        def _to_int(val):
+            try:
+                return int(val)
+            except Exception:
+                return None
+
+        def _to_float(val):
+            try:
+                return float(val)
+            except Exception:
+                return None
+
+        wa = WebAccess(
+            timestamp=ts or datetime.now(timezone.utc),
+            remote_addr=ev.get("remote_addr"),
+            remote_port=_to_int(ev.get("remote_port")),
+            remote_user=ev.get("remote_user"),
+            request=req,
+            method=method,
+            path=path,
+            status=_to_int(ev.get("status")),
+            body_bytes_sent=_to_int(ev.get("body_bytes_sent")),
+            http_referer=ev.get("http_referer"),
+            http_user_agent=ev.get("http_user_agent"),
+            http_x_forwarded_for=ev.get("http_x_forwarded_for"),
+            server_name=ev.get("server_name"),
+            upstream_addr=ev.get("upstream_addr"),
+            ssl_protocol=ev.get("ssl_protocol"),
+            ssl_cipher=ev.get("ssl_cipher"),
+            request_time=_to_float(ev.get("request_time")),
+            raw=ev
+        )
+
+        if wa.remote_addr:
+            try:
+                node = self.get_node_from_db_or_web(wa.remote_addr) if enrich else self.ensure_node_minimal(wa.remote_addr, seen_time=ts)
+                if node:
+                    wa.node = node
+            except Exception:
+                pass
+
+        session.add(wa)
+        session.flush()
+        return wa
+
     # -------------------------
     # Honeypot ingestion helpers (used by manual ingestion endpoint)
     # -------------------------
@@ -632,6 +838,50 @@ class ForensicEngine:
                         except Exception:
                             self.db.rollback()
                 # final commit
+                try:
+                    self.db.commit()
+                except Exception:
+                    self.db.rollback()
+        except FileNotFoundError:
+            return {"lines_processed": 0, "errors": 1, "message": f"File not found: {filepath}"}
+        except Exception as e:
+            return {"lines_processed": processed, "errors": errors + 1, "message": str(e)}
+
+        return {"lines_processed": processed, "errors": errors}
+
+    def ingest_nginx_access_file(self, filepath, enrich=True, batch_size=500):
+        """
+        Ingest a JSON-line formatted nginx access log. Each line should be a JSON object with keys
+        matching the WebAccess columns. Enrichment is optional and uses get_node_from_db_or_web.
+        """
+        processed = 0
+        errors = 0
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    processed += 1
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        ev = json.loads(line)
+                    except Exception:
+                        errors += 1
+                        continue
+                    try:
+                        self._ingest_nginx_access_event(ev, session=self.db, enrich=enrich)
+                    except Exception:
+                        errors += 1
+                        try:
+                            self.db.rollback()
+                        except Exception:
+                            pass
+
+                    if processed % batch_size == 0:
+                        try:
+                            self.db.commit()
+                        except Exception:
+                            self.db.rollback()
                 try:
                     self.db.commit()
                 except Exception:
@@ -809,6 +1059,78 @@ class ForensicEngine:
                 # Log and continue
                 print(f"Honeypot watcher encountered an error: {e}\n{traceback.format_exc()}")
             # sleep then loop
+            time.sleep(interval)
+
+    def _nginx_access_watcher(self, filepath, interval=30):
+        """
+        Tail an nginx access log (JSON lines) and insert new WebAccess rows.
+        Deduplicates by raw line hash and persists offset in a small state file.
+        """
+        try:
+            state = self._load_nginx_state()
+            offset = int(state.get("offset", 0))
+            processed_hashes = list(state.get("processed_hashes", []))
+            processed_set = set(processed_hashes)
+            MAX_HASH_HISTORY = 10000
+        except Exception:
+            offset = 0
+            processed_set = set()
+            processed_hashes = []
+            MAX_HASH_HISTORY = 10000
+
+        while True:
+            try:
+                if not os.path.isfile(filepath):
+                    offset = 0
+                    time.sleep(interval)
+                    continue
+
+                with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
+                    fh.seek(offset)
+                    while True:
+                        line = fh.readline()
+                        if not line:
+                            break
+                        line = line.strip()
+                        offset = fh.tell()
+                        if not line:
+                            continue
+                        h = _sha256_text(line)
+                        if h in processed_set:
+                            continue
+                        try:
+                            ev = json.loads(line)
+                        except Exception:
+                            processed_set.add(h)
+                            processed_hashes.append(h)
+                            if len(processed_hashes) > MAX_HASH_HISTORY:
+                                processed_hashes = processed_hashes[-MAX_HASH_HISTORY:]
+                                processed_set = set(processed_hashes)
+                            continue
+
+                        db_sess = self.Session()
+                        try:
+                            self._ingest_nginx_access_event(ev, session=db_sess, enrich=True)
+                            db_sess.commit()
+                        except Exception as e:
+                            try:
+                                db_sess.rollback()
+                            except Exception:
+                                pass
+                            print(f"Nginx watcher DB error: {e}\n{traceback.format_exc()}")
+                        finally:
+                            db_sess.close()
+
+                        processed_set.add(h)
+                        processed_hashes.append(h)
+                        if len(processed_hashes) > MAX_HASH_HISTORY:
+                            processed_hashes = processed_hashes[-MAX_HASH_HISTORY:]
+                            processed_set = set(processed_hashes)
+
+                state = {"offset": offset, "processed_hashes": processed_hashes}
+                self._save_nginx_state(state)
+            except Exception as e:
+                print(f"Nginx watcher encountered an error: {e}\n{traceback.format_exc()}")
             time.sleep(interval)
 
     def ingest_pcap(self, pcap_path, filter_host=None):
