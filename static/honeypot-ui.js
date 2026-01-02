@@ -3,6 +3,7 @@
 
 import * as honeypotApi from './honeypot.js';
 import * as ui from './ui.js';
+import { escapeHtml } from './util.js';
 
 export async function listHoneypotSessions(limit = 100) {
   ui.setLoading(true, 'Loading honeypot sessions…');
@@ -51,48 +52,101 @@ export async function viewHoneypotSession(id) {
   if (!id) return;
   ui.setLoading(true, 'Loading session…');
   try {
-    const res = await honeypotApi. viewSession(id);
+    const res = await honeypotApi.viewSession(id);
     ui.setLoading(false);
     if (!res.ok) {
       ui.showModal({ title: `Session ${id}`, text: res.error || 'Error loading session', allowPin: false });
       return;
     }
     const s = res.data.session;
-    let html = `<div><strong>Session ${s.id}</strong> — <span class="font-medium">${s.src_ip || '—'}</span> ${s. username ? ' • ' + s. username : ''}</div>
-              <div class="meta mt-1">${s.start_ts || ''} ${s.end_ts ? ' • ' + s.end_ts :  ''} ${s.auth_success ? ' • ' + s.auth_success : ''}</div>`;
+    
+    // Build improved honeypot session HTML with better styling
+    let html = `
+      <div class="honeypot-session-info">
+        <div class="honeypot-session-header">
+          <span class="honeypot-session-ip">${escapeHtml(s.src_ip || '—')}</span>
+          ${s.username ? `<span class="honeypot-session-badge">👤 ${escapeHtml(s.username)}</span>` : ''}
+          ${s.auth_success ? `<span class="honeypot-session-badge">${s.auth_success === 'true' || s.auth_success === true ? '✅ Auth' : '❌ Auth'}</span>` : ''}
+        </div>
+        <div class="honeypot-session-meta">
+          ${s.start_ts ? `<span>🕐 ${escapeHtml(s.start_ts)}</span>` : ''}
+          ${s.end_ts ? `<span>→ ${escapeHtml(s.end_ts)}</span>` : ''}
+          ${s.raw_events ? `<span>📊 ${s.raw_events.length || 0} events</span>` : ''}
+        </div>
+      </div>`;
 
     if (s.commands && s.commands.length) {
-      html += `<div class="mt-3"><div class="font-medium">Commands</div><div class="text-xs muted">`;
-      s.commands.slice(0,100).forEach(c => {
-        html += `<div>${c.timestamp || ''} • ${c.command}</div>`;
+      html += `
+        <div class="honeypot-section">
+          <div class="honeypot-section-title">⌨️ Commands (${s.commands.length})</div>
+          <div class="honeypot-section-content">`;
+      s.commands.slice(0, 100).forEach(c => {
+        html += `
+            <div class="honeypot-command-row">
+              <span class="honeypot-command-time">${escapeHtml(c.timestamp || '')}</span>
+              <span class="honeypot-command-text">${escapeHtml(c.command || '')}</span>
+            </div>`;
       });
+      if (s.commands.length > 100) {
+        html += `<div class="small muted" style="padding: 0.5rem;">... and ${s.commands.length - 100} more</div>`;
+      }
       html += `</div></div>`;
     }
 
     if (s.files && s.files.length) {
-      html += `<div class="mt-3"><div class="font-medium">Files</div><div class="text-xs muted">`;
-      s.files.slice(0,100).forEach(f => {
-        let fileHtml = `${f.timestamp || ''} • ${f.filename} ${f.sha256 ? ' • ' + f.sha256 : ''}`;
-        if (f.saved_path) {
-          const name = f.saved_path.split('/').pop();
-          const url = honeypotApi.artifactDownloadUrl(name);
-          fileHtml += ` • <a href="${url}" target="_blank" rel="noopener noreferrer">download</a>`;
-        }
-        html += `<div>${fileHtml}</div>`;
+      html += `
+        <div class="honeypot-section">
+          <div class="honeypot-section-title">📁 Files (${s.files.length})</div>
+          <div class="honeypot-section-content">`;
+      s.files.slice(0, 100).forEach(f => {
+        const downloadUrl = f.saved_path ? honeypotApi.artifactDownloadUrl(f.saved_path.split('/').pop()) : '';
+        html += `
+            <div class="honeypot-file-row">
+              <div>
+                <div class="honeypot-file-name">${escapeHtml(f.filename || '—')}</div>
+                ${f.sha256 ? `<div class="honeypot-file-hash">${escapeHtml(f.sha256)}</div>` : ''}
+              </div>
+              ${downloadUrl ? `<a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer" class="popup-action">Download</a>` : ''}
+            </div>`;
       });
       html += `</div></div>`;
     }
 
     if (s.raw_events && s.raw_events.length) {
-      html += `<div class="mt-3"><details class="text-xs muted"><summary class="font-medium">Raw events (${s.raw_events. length})</summary><pre style="white-space: pre-wrap;max-height:200px;overflow:auto;margin-top:. 5rem;">${escapeHtml(JSON.stringify(s.raw_events. slice(0,200), null, 2))}</pre></details></div>`;
+      html += `
+        <div class="honeypot-section">
+          <details>
+            <summary class="honeypot-section-title" style="cursor: pointer;">📜 Raw Events (${s.raw_events.length})</summary>
+            <div class="honeypot-section-content" style="margin-top: 0.5rem;">
+              <pre style="white-space: pre-wrap; font-size: 0.75rem; margin: 0;">${escapeHtml(JSON.stringify(s.raw_events.slice(0, 200), null, 2))}</pre>
+            </div>
+          </details>
+        </div>`;
     }
 
+    // Create a simplified HTML for pinning
+    const pinnedHtml = `
+      <div class="small">
+        <div class="font-medium">${escapeHtml(s.src_ip || '—')} ${s.username ? `• ${escapeHtml(s.username)}` : ''}</div>
+        <div class="muted">${escapeHtml(s.start_ts || '')} ${s.end_ts ? `→ ${escapeHtml(s.end_ts)}` : ''}</div>
+        ${s.commands?.length ? `<div class="mt-1"><strong>Commands:</strong> ${s.commands.length}</div>` : ''}
+        ${s.files?.length ? `<div><strong>Files:</strong> ${s.files.length}</div>` : ''}
+        ${s.raw_events?.length ? `<div><strong>Events:</strong> ${s.raw_events.length}</div>` : ''}
+      </div>`;
+
     ui.showModal({
-      title: `Honeypot Session ${s.id}`,
+      title: `🍯 Honeypot Session ${s.id}`,
       html,
       allowPin: true,
+      allowPinToSidebar: true,
       onPin: () => {
-        ui.addPinnedCard(`Honeypot ${s.id}`, html);
+        ui.addPinnedCard(`Honeypot ${s.id}`, pinnedHtml);
+      },
+      onPinLeft: () => {
+        ui.addPanelToZone(`Honeypot ${s.id}`, pinnedHtml, 'left');
+      },
+      onPinRight: () => {
+        ui.addPanelToZone(`Honeypot ${s.id}`, pinnedHtml, 'right');
       }
     });
 
@@ -101,7 +155,7 @@ export async function viewHoneypotSession(id) {
     }
   } catch (err) {
     ui.setLoading(false);
-    ui.showModal({ title: `Session ${id}`, text: 'Loading failed, please retry', allowPin:  false });
+    ui.showModal({ title: `Session ${id}`, text: 'Loading failed, please retry', allowPin: false });
     console.error('viewHoneypotSession error:', err);
   }
 }
@@ -179,10 +233,4 @@ export async function ingestPcapHandler() {
     if (statusEl) statusEl.innerText = 'PCAP ingestion failed';
     console.error('ingestPcapHandler error:', err);
   }
-}
-
-function escapeHtml(str) {
-  return (str || '').replace(/[&<>"']/g, (m) => {
-    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'":  '&#39;' })[m];
-  });
 }
