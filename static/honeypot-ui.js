@@ -145,6 +145,9 @@ export async function viewHoneypotSession(id) {
       onPinLeft: () => {
         ui.addPanelToZone(`Honeypot ${s.id}`, pinnedHtml, 'left');
       },
+      onPinMiddle: () => {
+        ui.addPanelToZone(`Honeypot ${s.id}`, pinnedHtml, 'middle');
+      },
       onPinRight: () => {
         ui.addPanelToZone(`Honeypot ${s.id}`, pinnedHtml, 'right');
       }

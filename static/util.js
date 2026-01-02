@@ -9,6 +9,24 @@ export function truncate(str = '', len = 80) {
   return str.slice(0, len - 1) + '…';
 }
 
+/**
+ * Get pointer coordinates from a mouse or pointer event.
+ * Uses PointerEvent properties when available, falls back to MouseEvent.
+ * This avoids Firefox deprecation warnings about mozPressure and mozInputSource.
+ * @param {MouseEvent|PointerEvent} event - The event object
+ * @returns {{ clientX: number, clientY: number, pressure: number, pointerType: string }}
+ */
+export function getPointerCoords(event) {
+  return {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    // Use PointerEvent.pressure instead of deprecated MouseEvent.mozPressure
+    pressure: 'pressure' in event ? event.pressure : ('mozPressure' in event ? 0.5 : 0),
+    // Use PointerEvent.pointerType instead of deprecated MouseEvent.mozInputSource
+    pointerType: 'pointerType' in event ? event.pointerType : 'mouse'
+  };
+}
+
 export function summarizeNodeDetails(node = {}) {
   const extra = node.extra_data || {};
   const fp = extra.fingerprints || {};

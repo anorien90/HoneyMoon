@@ -110,6 +110,38 @@ body {
 
 #mainZone {
   min-width: 0;
+  position: relative;
+}
+
+/* Middle zone (overlay layer) */
+.middle-zone {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 500;
+  background: transparent;
+  pointer-events: none;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow: visible;
+}
+
+.middle-zone .panel-card {
+  pointer-events: all;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  max-width: 400px;
+  resize: both;
+  overflow: auto;
+}
+
+[data-theme="dark"] .middle-zone .panel-card {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 /* Panel cards */

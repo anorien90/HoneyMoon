@@ -315,6 +315,9 @@ function initPopupActionDelegates() {
     } else if (action === 'pin-left') {
       ui.addPanelToZone(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node), 'left');
       ui.toast('Added to left sidebar');
+    } else if (action === 'pin-middle') {
+      ui.addPanelToZone(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node), 'middle');
+      ui.toast('Added to middle overlay');
     } else if (action === 'pin-right') {
       ui.addPanelToZone(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node), 'right');
       ui.toast('Added to right sidebar');
@@ -396,6 +399,15 @@ function initSidebarToggles() {
     const zone = $('rightZone');
     if (zone) {
       zone.classList. toggle('hidden');
+      setTimeout(() => mapModule.invalidateSize(), 150);
+    }
+  });
+  
+  // Toggle middle zone (overlay)
+  $('toggleMiddle')?.addEventListener('click', () => {
+    const zone = $('middleZone');
+    if (zone) {
+      zone.classList.toggle('hidden');
       setTimeout(() => mapModule.invalidateSize(), 150);
     }
   });
