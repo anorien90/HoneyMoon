@@ -8,16 +8,22 @@ import { escapeHtml } from './util.js';
 import * as honeypotUI from './honeypot-ui.js';
 import * as dbUI from './db-ui.js';
 import * as honeypotApi from './honeypot.js';
+import {
+  applySavedInputs,
+  getState,
+  setActiveTab,
+  setCurrentIP,
+  setGridMode,
+  setLastSession,
+  setTracePrefs,
+  updateMarkerCount
+} from './state.js';
 
 const $ = id => document.getElementById(id);
 
 // Application state
-const state = {
-  currentIP: '',
-  lastSession: null,
-  activeTab: 'explore',
-  gridMode: false
-};
+const state = getState();
+const refreshMarkerCount = () => updateMarkerCount(() => mapModule.getMarkerCount?.() || 0);
 
 const summarizeNode = ui.summarizeNodeDetails;
 
@@ -62,7 +68,8 @@ export async function locateIP() {
   const ip = (elements.ipInput()?.value || '').trim();
   if (!ip) return ui.toast('Provide an IP');
   
-  state.currentIP = ip;
+  setCurrentIP(ip);
+  setTracePrefs(elements.maxttl()?.value, elements.deepToggle()?.checked);
   ui.setLoading(true, 'Locating…');
   
   try {
@@ -84,7 +91,7 @@ export async function locateIP() {
     ui.renderHopListFromNode?.(node);
     
     if (mapModule.getMarkerCount() > 0) mapModule.fitToMarkers();
-    updateMarkerCount();
+    refreshMarkerCount();
   } catch (err) {
     ui.setLoading(false);
     ui.toast('Location failed, please retry');
@@ -96,9 +103,10 @@ export async function traceIP() {
   const ip = (elements.ipInput()?.value || '').trim();
   if (!ip) return ui.toast('Provide an IP');
   
-  state.currentIP = ip;
+  setCurrentIP(ip);
   const deep = elements.deepToggle()?.checked ? 1 : 0;
   const maxttl = parseInt(elements.maxttl()?.value || '30') || 30;
+  setTracePrefs(maxttl, !!deep);
   
   ui.setLoading(true, 'Tracing…');
   
@@ -117,7 +125,7 @@ export async function traceIP() {
     ui.ensurePanelOpen('map');
     ui.ensurePanelOpen('hops');
     
-    state.lastSession = res.data. session;
+    setLastSession(res.data. session);
     const hops = state.lastSession.path || [];
     const nodes = res.data.nodes || {};
     
@@ -162,7 +170,7 @@ export async function traceIP() {
     ui.renderHopList(hops, nodes);
     
     if (coords.length) mapModule.fitToMarkers();
-    updateMarkerCount();
+    refreshMarkerCount();
   } catch (err) {
     ui.setLoading(false);
     ui.toast('Trace failed, please retry');
@@ -170,16 +178,11 @@ export async function traceIP() {
   }
 }
 
-function updateMarkerCount() {
-  const el = $('markerCount');
-  if (el) el.textContent = String(mapModule.getMarkerCount?.() || 0);
-}
-
 function clearMap() {
   mapModule.clearMap();
   ui.resetSelectedUI();
-  updateMarkerCount();
-  state.lastSession = null;
+  refreshMarkerCount();
+  setLastSession(null);
   
   const lastSessionIdEl = $('lastSessionId');
   const lastHopCountEl = $('lastHopCount');
@@ -273,7 +276,7 @@ async function locateAttacker(ip, opts = {}) {
   ui.setSelectedNodeUI(node);
   
   if (mapModule.getMarkerCount() > 0) mapModule.fitToMarkers();
-  updateMarkerCount();
+  refreshMarkerCount();
   
   if (!opts.silent) {
     window.dispatchEvent(new CustomEvent('ui:switchTab', { detail: { name: 'map' } }));
@@ -334,11 +337,11 @@ function initTabs() {
   
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
-      state.activeTab = tab;
-      
-      tabBtns.forEach(b => {
-        b.classList.toggle('active', b === btn);
+    const tab = btn.dataset.tab;
+    setActiveTab(tab);
+    
+    tabBtns.forEach(b => {
+      b.classList.toggle('active', b === btn);
         b.setAttribute('aria-selected', b === btn ?  'true' : 'false');
       });
       
@@ -356,6 +359,14 @@ function initTabs() {
       }
     });
   });
+  
+  const savedTab = state.activeTab;
+  if (savedTab) {
+    const savedBtn = document.querySelector(`.tab-btn[data-tab="${savedTab}"]`);
+    if (savedBtn && !savedBtn.classList.contains('active')) {
+      savedBtn.click();
+    }
+  }
   
   // Listen for external tab switch requests
   window.addEventListener('ui:switchTab', (ev) => {
@@ -424,13 +435,14 @@ function initLayoutToggle() {
   // Load and apply saved layout mode preference
   const savedGrid = ui.loadGridMode();
   if (savedGrid) {
-    state.gridMode = true;
+    setGridMode(true);
     ui.setGridMode(true);
     if (toggleLayoutBtn) toggleLayoutBtn.textContent = 'Grid';
   }
   
   toggleLayoutBtn?.addEventListener('click', () => {
-    state.gridMode = !state.gridMode;
+    const next = !state.gridMode;
+    setGridMode(next);
     ui.setGridMode(state.gridMode);
     toggleLayoutBtn. textContent = state.gridMode ?  'Grid' : 'Free';
   });
@@ -472,6 +484,21 @@ function initKeyboardShortcuts() {
       case 'escape':
         ui.hideModal();
         break;
+    }
+  });
+}
+
+function initIpInputShortcuts() {
+  const ipEl = elements.ipInput();
+  if (!ipEl) return;
+  ipEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        traceIP();
+      } else {
+        locateIP();
+      }
     }
   });
 }
@@ -550,7 +577,7 @@ function initCustomEvents() {
 function initMapSelection() {
   mapModule.onSelect(node => {
     ui.setSelectedNodeUI(node);
-    updateMarkerCount();
+    refreshMarkerCount();
   });
 }
 
@@ -604,6 +631,11 @@ async function init() {
     
     ui.initUI();
     dbUI.initDatabasePanel();
+    applySavedInputs({
+      ipInput: elements.ipInput(),
+      maxttlInput: elements.maxttl(),
+      deepToggle: elements.deepToggle()
+    });
     
     initTabs();
     initMapSelection();
@@ -621,6 +653,7 @@ async function init() {
     initLayoutToggle();
     initCloseAllPins();
     initKeyboardShortcuts();
+    initIpInputShortcuts();
     initHoneypotHandlers();
     initCustomEvents();
     initPopupActionDelegates();
