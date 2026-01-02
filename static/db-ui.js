@@ -316,7 +316,7 @@ export async function plotAnalysisHops(session) {
     const node = nodes[c.ip] || { ip: c.ip, latitude: c.lat, longitude: c.lon };
     mapModule.addMarkerForNode(node, role);
   });
-  mapModule.drawPath(coords. map(c => ({ lat: c.lat, lon: c.lon, hop: c.hop })));
+  mapModule.drawPath(coords.map(c => ({ lat: c.lat, lon: c.lon, hop: c.hop })));
   mapModule.fitToMarkers();
   ui.toast('Analysis hops plotted');
   refreshMarkerCount();

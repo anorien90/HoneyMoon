@@ -125,7 +125,7 @@ export async function traceIP() {
     ui.ensurePanelOpen('map');
     ui.ensurePanelOpen('hops');
     
-    setLastSession(res.data. session);
+    setLastSession(res.data.session);
     const hops = state.lastSession.path || [];
     const nodes = res.data.nodes || {};
     
@@ -370,7 +370,7 @@ function initTabs() {
   
   // Listen for external tab switch requests
   window.addEventListener('ui:switchTab', (ev) => {
-    const name = ev.detail?. name;
+    const name = ev.detail?.name;
     if (name) {
       const btn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
       btn?.click();
@@ -444,7 +444,7 @@ function initLayoutToggle() {
     const next = !state.gridMode;
     setGridMode(next);
     ui.setGridMode(state.gridMode);
-    toggleLayoutBtn. textContent = state.gridMode ?  'Grid' : 'Free';
+    toggleLayoutBtn.textContent = state.gridMode ? 'Grid' : 'Free';
   });
 }
 
