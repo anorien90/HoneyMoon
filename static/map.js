@@ -121,8 +121,10 @@ const popupTemplate = (node) => {
     </div>
     ${tags.length ? `<div class="map-popup-tags" style="margin-top:0.35rem; display:flex; gap:0.25rem; flex-wrap:wrap;">${tags.map(t => `<span style="padding:2px 6px;border:1px solid var(--border, #e5e7eb);border-radius:6px;font-size:12px;">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
     <div class="map-popup-actions" style="margin-top:0.5rem; display:flex; gap:0.4rem; flex-wrap:wrap;">
-      <button class="small popup-action" data-action="panel" data-ip="${escapeHtml(node.ip || '')}">Open panel</button>
-      <button class="small popup-action" data-action="pin" data-ip="${escapeHtml(node.ip || '')}">Pin</button>
+      <button class="small popup-action" data-action="panel" data-ip="${escapeHtml(node.ip || '')}" title="Open in right panel">◀ Panel</button>
+      <button class="small popup-action" data-action="pin-left" data-ip="${escapeHtml(node.ip || '')}" title="Pin to left sidebar">◀ Left</button>
+      <button class="small popup-action" data-action="pin-right" data-ip="${escapeHtml(node.ip || '')}" title="Pin to right sidebar">▶ Right</button>
+      <button class="small popup-action" data-action="pin" data-ip="${escapeHtml(node.ip || '')}" title="Pin to workspace">📌 Pin</button>
     </div>
   </div>`;
 };

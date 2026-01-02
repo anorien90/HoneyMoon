@@ -1,7 +1,8 @@
 /* Clean, optimized styles for panel-based interface */
 
-: root {
+:root {
   --card-bg: #ffffff;
+  --card-radius: 0.5rem;
   --page-bg: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
   --muted:  #6b7280;
   --accent: #2563eb;
@@ -527,6 +528,180 @@ input:focus, select:focus {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* Pinned workspace and cards */
+.pinned-area {
+  position: relative;
+  min-height: 200px;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--glass);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+}
+
+.pinned-area.workspace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.pinned-area.grid-mode {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.pinned-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  min-width: 280px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: box-shadow var(--transition), transform var(--transition);
+}
+
+.pinned-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.pinned-card.active {
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.25);
+  transform: translateY(-2px);
+}
+
+.pinned-card.docked {
+  position: relative !important;
+  left: auto !important;
+  top: auto !important;
+}
+
+.pinned-card.card-collapsed .pin-body {
+  display: none;
+}
+
+.pin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--glass);
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  user-select: none;
+  min-height: 36px;
+}
+
+.pin-header strong {
+  font-size: 0.875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.pin-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.pin-controls button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all var(--transition);
+  color: inherit;
+}
+
+.pin-controls button:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.pin-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0.75rem;
+  min-height: 60px;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  cursor: se-resize;
+  background: linear-gradient(135deg, transparent 50%, var(--border) 50%);
+  border-radius: 0 0 4px 0;
+}
+
+/* Drag and drop states for pinned cards */
+.pinned-card.dragging {
+  opacity: 0.5;
+}
+
+.pinned-card.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+/* Map popup styles */
+.map-popup {
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.map-popup .font-medium {
+  font-weight: 600;
+}
+
+.map-popup-grid {
+  margin-top: 0.4rem;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+}
+
+.map-popup-tags {
+  margin-top: 0.35rem;
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.map-popup-actions {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.popup-action {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all var(--transition);
+  color: inherit;
+}
+
+.popup-action:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
 }
 
 /* Responsive */

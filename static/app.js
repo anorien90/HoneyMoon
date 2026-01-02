@@ -312,6 +312,12 @@ function initPopupActionDelegates() {
     } else if (action === 'pin') {
       ui.addPinnedCard(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node));
       ui.toast('Pinned node details');
+    } else if (action === 'pin-left') {
+      ui.addPanelToZone(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node), 'left');
+      ui.toast('Added to left sidebar');
+    } else if (action === 'pin-right') {
+      ui.addPanelToZone(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node), 'right');
+      ui.toast('Added to right sidebar');
     }
   });
 }
