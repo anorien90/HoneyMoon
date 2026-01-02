@@ -2,6 +2,7 @@
 // Merged:  combines old version's pinned workspace with new panel system
 
 import * as mapModule from './map.js';
+import { escapeHtml, truncate } from './util.js';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -113,17 +114,6 @@ function throttle(fn, ms = 16) {
       fn.apply(this, args);
     }
   };
-}
-
-export function escapeHtml(str) {
-  if (!str) return '';
-  const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'":  '&#39;' };
-  return str.replace(/[&<>"']/g, m => escapeMap[m]);
-}
-
-export function truncate(str = '', len = 80) {
-  if (str.length <= len) return str;
-  return str.slice(0, len - 1) + '…';
 }
 
 export function summarizeNodeDetails(node = {}) {

@@ -1,6 +1,8 @@
 // Optimized Map module with marker clustering, lazy loading, and better memory management
 // Merged: combines marker pool from old version with cleaner new version structure
 
+import { escapeHtml, truncate } from './util.js';
+
 let map = null;
 let markers = [];
 let arcsLayer = null;
@@ -10,9 +12,6 @@ let isInitialized = false;
 // Marker pool for reuse (from old version)
 const markerPool = [];
 const MAX_POOL_SIZE = 100;
-
-const escapeHtml = (str = '') => str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m] || m));
-const truncate = (str = '', len = 80) => str.length > len ? `${str.slice(0, len - 1)}…` : str;
 
 export function initMap() {
   if (isInitialized) return Promise.resolve();

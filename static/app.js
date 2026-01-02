@@ -4,6 +4,7 @@
 import { apiGet } from './api.js';
 import * as mapModule from './map.js';
 import * as ui from './ui.js';
+import { escapeHtml } from './util.js';
 import * as honeypotUI from './honeypot-ui.js';
 import * as dbUI from './db-ui.js';
 import * as honeypotApi from './honeypot.js';
@@ -18,7 +19,6 @@ const state = {
   gridMode: false
 };
 
-const escapeHtml = ui.escapeHtml;
 const summarizeNode = ui.summarizeNodeDetails;
 
 function buildPinnedNodeHtml(node = {}) {
