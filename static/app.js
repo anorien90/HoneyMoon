@@ -4,6 +4,7 @@
 import { apiGet } from './api.js';
 import * as mapModule from './map.js';
 import * as ui from './ui.js';
+import { escapeHtml } from './util.js';
 import * as honeypotUI from './honeypot-ui.js';
 import * as dbUI from './db-ui.js';
 import * as honeypotApi from './honeypot.js';
@@ -17,6 +18,22 @@ const state = {
   activeTab: 'explore',
   gridMode: false
 };
+
+const summarizeNode = ui.summarizeNodeDetails;
+
+function buildPinnedNodeHtml(node = {}) {
+  const summary = summarizeNode(node);
+  const org = node.organization_obj?.name || node.organization || '';
+  const location = [node.city, node.country].filter(Boolean).join(', ');
+  return `<div class="small">
+    <div class="font-medium">${escapeHtml(node.ip || 'Unknown')}${node.hostname ? ` • ${escapeHtml(node.hostname)}` : ''}</div>
+    <div class="muted">${escapeHtml(org)}${location ? ` • ${escapeHtml(location)}` : ''}</div>
+    <div class="mt-1"><div class="muted small">Open ports</div><div>${escapeHtml(summary.ports || '—')}</div></div>
+    <div class="mt-1"><div class="muted small">OS / Fingerprint</div><div>${escapeHtml(summary.os || '—')}</div></div>
+    <div class="mt-1"><div class="muted small">HTTP/TLS</div><div>${escapeHtml(summary.http || '—')}</div></div>
+    ${summary.tags ? `<div class="mt-1 muted small">Tags: ${escapeHtml(summary.tags)}</div>` : ''}
+  </div>`;
+}
 
 // DOM references
 const elements = {
@@ -263,6 +280,40 @@ async function locateAttacker(ip, opts = {}) {
     ui.toast(`Attacker ${ip} highlighted`);
   }
   return true;
+}
+
+async function resolveNodeForAction(ip) {
+  if (window.selectedNode && (!ip || window.selectedNode.ip === ip)) return window.selectedNode;
+  if (!ip) return null;
+  try {
+    const res = await apiGet(`/api/v1/locate?ip=${encodeURIComponent(ip)}`, { retries: 1 });
+    if (res.ok && res.data?.node) return res.data.node;
+  } catch (e) {
+    console.error('resolveNodeForAction error:', e);
+  }
+  return window.selectedNode || null;
+}
+
+function initPopupActionDelegates() {
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.popup-action[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const ip = btn.dataset.ip || '';
+    const node = await resolveNodeForAction(ip);
+    if (!node) {
+      ui.toast('Node details unavailable');
+      return;
+    }
+    if (action === 'panel') {
+      ui.ensurePanelOpen('selectedNode');
+      ui.setSelectedNodeUI(node);
+      ui.toast('Node opened in panel');
+    } else if (action === 'pin') {
+      ui.addPinnedCard(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node));
+      ui.toast('Pinned node details');
+    }
+  });
 }
 
 // ============================================
@@ -553,6 +604,7 @@ async function init() {
     initKeyboardShortcuts();
     initHoneypotHandlers();
     initCustomEvents();
+    initPopupActionDelegates();
     initCardCollapseHandlers();
     initAutoRefresh();
     

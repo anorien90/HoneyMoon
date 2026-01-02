@@ -1,6 +1,8 @@
 // Optimized Map module with marker clustering, lazy loading, and better memory management
 // Merged: combines marker pool from old version with cleaner new version structure
 
+import { escapeHtml, summarizeNodeDetails } from './util.js';
+
 let map = null;
 let markers = [];
 let arcsLayer = null;
@@ -101,29 +103,27 @@ export function getMarkerCount() {
 
 // Cached popup template (from old version)
 const popupTemplate = (node) => {
-  const orgName = node.organization_obj?. name || node.organization || '';
-  const banners = node.extra_data?.banners ?  Object.keys(node.extra_data.banners).join(', ') : '';
-  const reg = node.organization_obj?.extra_data?.company_search || node.extra_data?.company_search;
-  
-  let registryHtml = '';
-  if (reg) {
-    const title = reg.matched_name || reg.name || '';
-    const url = reg.company_url || '';
-    const num = reg.company_number ?  ` (${reg.company_number})` : '';
-    const src = reg.source ?  ` [${reg.source}]` : '';
-    registryHtml = `<div style="margin-top:. 35rem">Registry: ${src} ${title ?  `<strong>${title}${num}</strong>` : ''} ${url ? `<div><a href="${url}" target="_blank" rel="noopener noreferrer">view</a></div>` : ''}</div>`;
-  }
-  
+  const orgName = node.organization_obj?.name || node.organization || '';
   const location = [node.city, node.country].filter(Boolean).join(', ');
+  const summary = summarizeNodeDetails(node);
+  const ports = summary.ports ? escapeHtml(summary.ports) : '';
+  const os = summary.os ? escapeHtml(summary.os) : '';
+  const http = summary.http ? escapeHtml(summary.http) : '';
+  const tags = summary.tags ? summary.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
   
-  return `<div style="min-width:220px">
-    <strong>${node.ip || 'Unknown'}</strong>
-    ${node.hostname ? `<div>Host: ${node.hostname}</div>` : ''}
-    ${orgName ? `<div>Org: ${orgName}</div>` : ''}
-    ${registryHtml}
-    ${node.isp ? `<div>ISP: ${node.isp}</div>` : ''}
-    ${location ? `<div>Location: ${location}</div>` : ''}
-    ${banners ? `<div style="margin-top:.25rem">Open ports: ${banners}</div>` : ''}
+  return `<div class="map-popup" style="min-width:240px">
+    <div class="font-medium">${escapeHtml(node.ip || 'Unknown')}${node.hostname ? ` • ${escapeHtml(node.hostname)}` : ''}</div>
+    <div class="small muted">${orgName ? escapeHtml(orgName) : ''}${location ? ` • ${escapeHtml(location)}` : ''}</div>
+    <div class="map-popup-grid" style="margin-top:0.4rem; display:grid; grid-template-columns:repeat(1,1fr); gap:0.35rem;">
+      <div><div class="muted small">Open ports</div><div>${ports || '—'}</div></div>
+      <div><div class="muted small">OS / Fingerprint</div><div>${os || '—'}</div></div>
+      <div><div class="muted small">HTTP/TLS</div><div>${http || '—'}</div></div>
+    </div>
+    ${tags.length ? `<div class="map-popup-tags" style="margin-top:0.35rem; display:flex; gap:0.25rem; flex-wrap:wrap;">${tags.map(t => `<span style="padding:2px 6px;border:1px solid var(--border, #e5e7eb);border-radius:6px;font-size:12px;">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+    <div class="map-popup-actions" style="margin-top:0.5rem; display:flex; gap:0.4rem; flex-wrap:wrap;">
+      <button class="small popup-action" data-action="panel" data-ip="${escapeHtml(node.ip || '')}">Open panel</button>
+      <button class="small popup-action" data-action="pin" data-ip="${escapeHtml(node.ip || '')}">Pin</button>
+    </div>
   </div>`;
 };
 
