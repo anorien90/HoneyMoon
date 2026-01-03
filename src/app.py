@@ -1296,6 +1296,378 @@ def favicon():
     return send_file(os.path.join(STATIC_DIR, 'favicon.ico'))
 
 
+# -------------------------
+# MCP Server endpoints
+# -------------------------
+try:
+    from src.mcp_server import MCPServer, ToolCategory
+    mcp_server = MCPServer(forensic_engine=engine)
+    _HAS_MCP_SERVER = True
+except Exception as e:
+    mcp_server = None
+    _HAS_MCP_SERVER = False
+    import logging
+    logging.getLogger(__name__).warning("MCP server not available: %s", e)
+
+
+@app.route('/api/v1/mcp/tools')
+def mcp_list_tools():
+    """
+    List available MCP tools.
+    Query params:
+      - category: Filter by tool category (investigation, analysis, search, countermeasure, monitoring)
+      - include_intrusive: Include intrusive tools (default: true)
+    """
+    if not _HAS_MCP_SERVER or not mcp_server:
+        return jsonify({"error": "MCP server not available"}), 503
+    
+    category_str = request.args.get('category')
+    include_intrusive = request.args.get('include_intrusive', '1').lower() in ("1", "true", "yes", "on")
+    
+    category = None
+    if category_str:
+        try:
+            category = ToolCategory(category_str)
+        except ValueError:
+            return jsonify({"error": f"Invalid category: {category_str}"}), 400
+    
+    tools = mcp_server.get_tools(category=category, include_intrusive=include_intrusive)
+    return jsonify({"tools": tools, "count": len(tools)}), 200
+
+
+@app.route('/api/v1/mcp/tool')
+def mcp_get_tool():
+    """
+    Get details of a specific MCP tool.
+    Query params:
+      - name: Tool name (required)
+    """
+    if not _HAS_MCP_SERVER or not mcp_server:
+        return jsonify({"error": "MCP server not available"}), 503
+    
+    name = request.args.get('name')
+    if not name:
+        return jsonify({"error": "Provide tool name"}), 400
+    
+    tool = mcp_server.get_tool(name)
+    if not tool:
+        return jsonify({"error": f"Tool not found: {name}"}), 404
+    
+    return jsonify({"tool": tool}), 200
+
+
+@app.route('/api/v1/mcp/execute', methods=['POST'])
+def mcp_execute_tool():
+    """
+    Execute an MCP tool.
+    JSON body: {"tool": "<tool_name>", "params": {...}, "confirmed": <bool>}
+    """
+    if not _HAS_MCP_SERVER or not mcp_server:
+        return jsonify({"error": "MCP server not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    tool_name = data.get('tool')
+    params = data.get('params', {})
+    confirmed = data.get('confirmed', False)
+    
+    if not tool_name:
+        return jsonify({"error": "Provide tool name"}), 400
+    
+    result = mcp_server.execute_tool(tool_name, params, confirmed=confirmed)
+    
+    response = {
+        "success": result.success,
+        "data": result.data,
+        "error": result.error,
+        "metadata": result.metadata
+    }
+    
+    status_code = 200 if result.success else 400
+    return jsonify(response), status_code
+
+
+@app.route('/api/v1/mcp/context')
+def mcp_get_context():
+    """
+    Get relevant context for a query using RAG.
+    Query params:
+      - q: Query string (required)
+      - limit: Maximum results per category (default: 5)
+    """
+    if not _HAS_MCP_SERVER or not mcp_server:
+        return jsonify({"error": "MCP server not available"}), 503
+    
+    query = request.args.get('q')
+    if not query:
+        return jsonify({"error": "Provide query parameter q"}), 400
+    
+    try:
+        limit = int(request.args.get('limit', 5))
+    except ValueError:
+        limit = 5
+    
+    context = mcp_server.get_context_for_query(query, limit=limit)
+    return jsonify(context), 200
+
+
+# -------------------------
+# Agent System endpoints
+# -------------------------
+try:
+    from src.agent_system import AgentSystem, TaskType, TaskStatus, TaskPriority
+    agent_system = AgentSystem(mcp_server=mcp_server, forensic_engine=engine)
+    # Start the agent system
+    agent_enabled = os.environ.get("AGENT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+    if agent_enabled:
+        agent_system.start()
+    _HAS_AGENT_SYSTEM = True
+except Exception as e:
+    agent_system = None
+    _HAS_AGENT_SYSTEM = False
+    import logging
+    logging.getLogger(__name__).warning("Agent system not available: %s", e)
+
+
+@app.route('/api/v1/agent/status')
+def agent_status():
+    """Get agent system status."""
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    return jsonify(agent_system.get_status()), 200
+
+
+@app.route('/api/v1/agent/tasks')
+def agent_list_tasks():
+    """
+    List agent tasks.
+    Query params:
+      - status: Filter by status (pending, running, completed, failed, cancelled, paused)
+      - type: Filter by task type (investigation, monitoring, analysis, countermeasure, scheduled)
+      - limit: Maximum results (default: 50)
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    status_str = request.args.get('status')
+    type_str = request.args.get('type')
+    
+    try:
+        limit = int(request.args.get('limit', 50))
+    except ValueError:
+        limit = 50
+    
+    status = None
+    if status_str:
+        try:
+            status = TaskStatus(status_str)
+        except ValueError:
+            return jsonify({"error": f"Invalid status: {status_str}"}), 400
+    
+    task_type = None
+    if type_str:
+        try:
+            task_type = TaskType(type_str)
+        except ValueError:
+            return jsonify({"error": f"Invalid task type: {type_str}"}), 400
+    
+    tasks = agent_system.list_tasks(status=status, task_type=task_type, limit=limit)
+    return jsonify({"tasks": tasks, "count": len(tasks)}), 200
+
+
+@app.route('/api/v1/agent/task')
+def agent_get_task():
+    """
+    Get details of a specific task.
+    Query params:
+      - id: Task ID (required)
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    task_id = request.args.get('id')
+    if not task_id:
+        return jsonify({"error": "Provide task id"}), 400
+    
+    task = agent_system.get_task(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    
+    return jsonify({"task": task}), 200
+
+
+@app.route('/api/v1/agent/task/create', methods=['POST'])
+def agent_create_task():
+    """
+    Create a new agent task.
+    JSON body: {
+        "type": "<task_type>",
+        "name": "<task_name>",
+        "description": "<description>",
+        "parameters": {...},
+        "priority": "<priority>",
+        "requires_confirmation": <bool>,
+        "schedule_interval": <int>
+    }
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    
+    type_str = data.get('type', 'investigation')
+    try:
+        task_type = TaskType(type_str)
+    except ValueError:
+        return jsonify({"error": f"Invalid task type: {type_str}"}), 400
+    
+    name = data.get('name')
+    if not name:
+        return jsonify({"error": "Provide task name"}), 400
+    
+    description = data.get('description', '')
+    parameters = data.get('parameters', {})
+    
+    priority_str = data.get('priority', 'normal')
+    priority_map = {'low': TaskPriority.LOW, 'normal': TaskPriority.NORMAL, 
+                    'high': TaskPriority.HIGH, 'critical': TaskPriority.CRITICAL}
+    priority = priority_map.get(priority_str.lower(), TaskPriority.NORMAL)
+    
+    requires_confirmation = data.get('requires_confirmation', False)
+    schedule_interval = data.get('schedule_interval')
+    
+    try:
+        task = agent_system.create_task(
+            task_type=task_type,
+            name=name,
+            description=description,
+            parameters=parameters,
+            priority=priority,
+            requires_confirmation=requires_confirmation,
+            schedule_interval=schedule_interval
+        )
+        return jsonify({"task": task.dict()}), 201
+    except Exception as e:
+        return jsonify({"error": f"Failed to create task: {e}"}), 500
+
+
+@app.route('/api/v1/agent/task/template', methods=['POST'])
+def agent_create_task_from_template():
+    """
+    Create a task from a template.
+    JSON body: {
+        "template": "<template_name>",
+        "parameters": {...},
+        "priority": "<priority>"
+    }
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    
+    template_name = data.get('template')
+    if not template_name:
+        return jsonify({"error": "Provide template name"}), 400
+    
+    parameters = data.get('parameters', {})
+    
+    priority_str = data.get('priority')
+    priority = None
+    if priority_str:
+        priority_map = {'low': TaskPriority.LOW, 'normal': TaskPriority.NORMAL, 
+                        'high': TaskPriority.HIGH, 'critical': TaskPriority.CRITICAL}
+        priority = priority_map.get(priority_str.lower())
+    
+    task = agent_system.create_task_from_template(template_name, parameters, priority)
+    
+    if not task:
+        return jsonify({"error": f"Template not found: {template_name}"}), 404
+    
+    return jsonify({"task": task.dict()}), 201
+
+
+@app.route('/api/v1/agent/task/confirm', methods=['POST'])
+def agent_confirm_task():
+    """
+    Confirm a task that requires confirmation.
+    JSON body: {"task_id": "<id>"}
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    task_id = data.get('task_id')
+    
+    if not task_id:
+        return jsonify({"error": "Provide task_id"}), 400
+    
+    if agent_system.confirm_task(task_id):
+        return jsonify({"confirmed": True, "task_id": task_id}), 200
+    
+    return jsonify({"error": "Task not found or already confirmed"}), 400
+
+
+@app.route('/api/v1/agent/task/cancel', methods=['POST'])
+def agent_cancel_task():
+    """
+    Cancel a pending task.
+    JSON body: {"task_id": "<id>"}
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    task_id = data.get('task_id')
+    
+    if not task_id:
+        return jsonify({"error": "Provide task_id"}), 400
+    
+    if agent_system.cancel_task(task_id):
+        return jsonify({"cancelled": True, "task_id": task_id}), 200
+    
+    return jsonify({"error": "Task not found or cannot be cancelled"}), 400
+
+
+@app.route('/api/v1/agent/templates')
+def agent_list_templates():
+    """List available task templates."""
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    templates = agent_system.get_task_templates()
+    return jsonify({"templates": templates}), 200
+
+
+@app.route('/api/v1/agent/messages')
+def agent_get_messages():
+    """
+    Get agent messages.
+    Query params:
+      - since: ISO timestamp to filter messages (optional)
+      - limit: Maximum messages (default: 100)
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    since_str = request.args.get('since')
+    since = None
+    if since_str:
+        try:
+            from datetime import datetime
+            since = datetime.fromisoformat(since_str.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({"error": "Invalid since timestamp"}), 400
+    
+    try:
+        limit = int(request.args.get('limit', 100))
+    except ValueError:
+        limit = 100
+    
+    messages = agent_system.get_messages(since=since, limit=limit)
+    return jsonify({"messages": messages, "count": len(messages)}), 200
+
+
 if __name__ == '__main__':
     debug = os.environ.get("IPMAP_DEBUG", "1") in ("1", "true", "yes")
     app.run(host='0.0.0.0', port=int(os.environ.get("IPMAP_PORT", "5000")), debug=debug)
