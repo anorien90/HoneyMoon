@@ -375,13 +375,16 @@ class AgentSystem:
             tool_name = step.get("tool")
             tool_params = step.get("params", {})
             
-            # Fill in parameters based on target
-            if ip and "ip" in self.mcp_server.get_tool(tool_name).get("parameters", {}).get("properties", {}):
-                tool_params["ip"] = ip
-            if session_id and "session_id" in self.mcp_server.get_tool(tool_name).get("parameters", {}).get("properties", {}):
-                tool_params["session_id"] = session_id
-            if query and "query" in self.mcp_server.get_tool(tool_name).get("parameters", {}).get("properties", {}):
-                tool_params["query"] = query
+            # Fill in parameters based on target - safely check if tool exists
+            tool_def = self.mcp_server.get_tool(tool_name) if tool_name else None
+            if tool_def:
+                tool_properties = tool_def.get("parameters", {}).get("properties", {})
+                if ip and "ip" in tool_properties:
+                    tool_params["ip"] = ip
+                if session_id and "session_id" in tool_properties:
+                    tool_params["session_id"] = session_id
+                if query and "query" in tool_properties:
+                    tool_params["query"] = query
             
             # Execute tool
             result = self.mcp_server.execute_tool(tool_name, tool_params)
@@ -592,32 +595,39 @@ class AgentSystem:
         return anomalies
     
     def _generate_investigation_summary(self, task: AgentTask, results: Dict) -> str:
-        """Generate a summary of investigation findings using LLM."""
-        if not self.engine.llm_analyzer.is_available():
-            return "LLM not available for summary generation"
+        """Generate a summary of investigation findings.
         
-        # Build context for LLM
-        context = {
-            "task_name": task.name,
-            "findings": results.get("findings", []),
-            "tools_used": [t["tool"] for t in results.get("tools_used", [])]
-        }
+        Creates a structured text summary of the investigation results.
+        Note: Does not use LLM to avoid coupling with internal implementation.
+        """
+        findings = results.get("findings", [])
+        tools_used = [t["tool"] for t in results.get("tools_used", [])]
         
-        # Use the LLM to generate a summary
-        try:
-            prompt = f"""Summarize the following security investigation results:
-            
-Task: {task.name}
-Description: {task.description}
-Findings: {json.dumps(context['findings'], indent=2)}
-
-Provide a concise summary of the investigation findings and any recommended next steps."""
-            
-            response = self.engine.llm_analyzer._generate(prompt)
-            return response or "Unable to generate summary"
-        except Exception as e:
-            logger.error("Failed to generate summary: %s", e)
-            return f"Summary generation failed: {e}"
+        summary_parts = [f"Investigation: {task.name}"]
+        
+        if findings:
+            summary_parts.append(f"Found {len(findings)} notable findings:")
+            for finding in findings[:5]:  # Limit to first 5 findings
+                finding_type = finding.get("type", "unknown")
+                if finding_type == "threat_detected":
+                    details = finding.get("details", {})
+                    summary_parts.append(
+                        f"  - Threat: {details.get('threat_type', 'Unknown')} "
+                        f"(Severity: {details.get('severity', 'Unknown')})"
+                    )
+                elif finding_type == "similar_attackers_found":
+                    summary_parts.append(f"  - Found {finding.get('count', 0)} similar attackers")
+                elif finding_type == "tor_exit_node":
+                    summary_parts.append(f"  - TOR exit node detected: {finding.get('ip')}")
+                else:
+                    summary_parts.append(f"  - {finding_type}")
+        else:
+            summary_parts.append("No notable findings.")
+        
+        if tools_used:
+            summary_parts.append(f"Tools executed: {', '.join(tools_used)}")
+        
+        return "\n".join(summary_parts)
     
     def _add_message(self, task_id: Optional[str], msg_type: str, content: str, data: Optional[Dict] = None):
         """Add a message to the message queue."""
