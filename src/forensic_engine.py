@@ -1218,6 +1218,15 @@ class ForensicEngine:
                             db_sess.commit()
                             new_count += 1
                             events_processed += 1
+                            # Log individual incoming connection details
+                            src_ip = ev.get("src_ip") or ev.get("src_addr") or ev.get("src") or "unknown"
+                            src_port = ev.get("src_port") or "N/A"
+                            event_type = ev.get("event") or ev.get("message") or ev.get("type") or "unknown"
+                            session_id = ev.get("session") or ev.get("sessionid") or ev.get("cowrie_session") or "N/A"
+                            self.logger.info(
+                                "[%s] New incoming connection: src=%s:%s, event=%s, session=%s",
+                                thread_name, src_ip, src_port, event_type, session_id
+                            )
                         except Exception as e:
                             try:
                                 db_sess.rollback()
@@ -1461,6 +1470,13 @@ class ForensicEngine:
                             db_sess.commit()
                             new_count += 1
                             connections_logged += 1
+                            # Log individual connection details
+                            self.logger.info(
+                                "[%s] New %s connection: %s:%s -> %s:%s (%s) [pid=%s, process=%s]",
+                                thread_name, direction, local_addr, local_port,
+                                remote_addr, remote_port, proto,
+                                pid or 'N/A', process_name or 'N/A'
+                            )
                         except Exception as e:
                             try:
                                 db_sess.rollback()
