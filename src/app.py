@@ -9,7 +9,7 @@ except Exception:
     HoneypotNetworkFlow = None
 
 try:
-    from src.entry import NetworkNode, Organization, WebAccess, AnalysisSession, ISP, OutgoingConnection
+    from src.entry import NetworkNode, Organization, WebAccess, AnalysisSession, ISP, OutgoingConnection, ThreatAnalysis, AttackerCluster
 except Exception:
     NetworkNode = None
     Organization = None
@@ -17,6 +17,8 @@ except Exception:
     AnalysisSession = None
     ISP = None
     OutgoingConnection = None
+    ThreatAnalysis = None
+    AttackerCluster = None
 
 TEMPLATE_DIR = os.environ.get("IPMAP_TEMPLATES", "/home/anorien/lib/HoneyMoon/templates")
 STATIC_DIR = os.environ.get("IPMAP_STATIC", "/home/anorien/lib/HoneyMoon/static")
@@ -700,6 +702,446 @@ def db_node():
 @app.route('/api/v1/health')
 def health():
     return jsonify({"status": "ok"}), 200
+
+
+# -------------------------
+# LLM Analysis endpoints
+# -------------------------
+@app.route('/api/v1/llm/status')
+def llm_status():
+    """Get LLM analyzer status."""
+    try:
+        status = engine.get_llm_status()
+        return jsonify(status), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get LLM status: {e}"}), 500
+
+
+@app.route('/api/v1/llm/analyze/session', methods=['POST'])
+def llm_analyze_session():
+    """
+    Analyze a honeypot session using LLM.
+    JSON body: {"session_id": <int>, "save": <bool>}
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or request.args.get('session_id')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    save = data.get('save', True)
+    
+    try:
+        result = engine.analyze_session_with_llm(session_id, save_result=save)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Analysis failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/analyze/accesses', methods=['POST'])
+def llm_analyze_accesses():
+    """
+    Analyze web access logs using LLM.
+    JSON body: {"ip": <str optional>, "limit": <int>, "save": <bool>}
+    """
+    data = request.get_json(silent=True) or {}
+    ip = data.get('ip') or request.args.get('ip')
+    
+    try:
+        limit = int(data.get('limit', 100))
+    except Exception:
+        limit = 100
+    
+    save = data.get('save', True)
+    
+    try:
+        result = engine.analyze_accesses_with_llm(ip=ip, limit=limit, save_result=save)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Analysis failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/analyze/connections', methods=['POST'])
+def llm_analyze_connections():
+    """
+    Analyze network connections using LLM.
+    JSON body: {"direction": <str optional>, "limit": <int>, "save": <bool>}
+    """
+    data = request.get_json(silent=True) or {}
+    direction = data.get('direction') or request.args.get('direction')
+    
+    try:
+        limit = int(data.get('limit', 100))
+    except Exception:
+        limit = 100
+    
+    save = data.get('save', True)
+    
+    try:
+        result = engine.analyze_connections_with_llm(direction=direction, limit=limit, save_result=save)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Analysis failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/countermeasure', methods=['POST'])
+def llm_countermeasure():
+    """
+    Generate countermeasure plan for a threat analysis.
+    JSON body: {"threat_analysis_id": <int>, "context": <dict optional>}
+    """
+    data = request.get_json(silent=True) or {}
+    threat_id = data.get('threat_analysis_id') or request.args.get('threat_analysis_id')
+    
+    if not threat_id:
+        return jsonify({"error": "Provide threat_analysis_id"}), 400
+    
+    try:
+        threat_id = int(threat_id)
+    except Exception:
+        return jsonify({"error": "Invalid threat_analysis_id"}), 400
+    
+    context = data.get('context', {})
+    
+    try:
+        result = engine.plan_countermeasure(threat_id, context=context)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Countermeasure planning failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/examine/artifact', methods=['POST'])
+def llm_examine_artifact():
+    """
+    Examine a captured artifact using LLM.
+    JSON body: {"artifact_name": <str>}
+    """
+    data = request.get_json(silent=True) or {}
+    artifact_name = data.get('artifact_name') or request.args.get('artifact_name')
+    
+    if not artifact_name:
+        return jsonify({"error": "Provide artifact_name"}), 400
+    
+    try:
+        result = engine.examine_artifact_with_llm(artifact_name)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Examination failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/unify', methods=['POST'])
+def llm_unify_threats():
+    """
+    Create unified threat profile from multiple sessions.
+    JSON body: {"session_ids": [<int>, ...]}
+    """
+    data = request.get_json(silent=True) or {}
+    session_ids = data.get('session_ids', [])
+    
+    if not session_ids:
+        return jsonify({"error": "Provide session_ids array"}), 400
+    
+    try:
+        session_ids = [int(sid) for sid in session_ids]
+    except Exception:
+        return jsonify({"error": "Invalid session_ids"}), 400
+    
+    try:
+        result = engine.unify_threats(session_ids)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Unification failed: {e}"}), 500
+
+
+# -------------------------
+# Vector search endpoints
+# -------------------------
+@app.route('/api/v1/vector/status')
+def vector_status():
+    """Get vector store status."""
+    try:
+        status = engine.get_vector_store_status()
+        return jsonify(status), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get vector status: {e}"}), 500
+
+
+@app.route('/api/v1/vector/index/session', methods=['POST'])
+def vector_index_session():
+    """
+    Index a honeypot session for similarity search.
+    JSON body: {"session_id": <int>}
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or request.args.get('session_id')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        success = engine.index_session_vector(session_id)
+        return jsonify({"indexed": success, "session_id": session_id}), 200
+    except Exception as e:
+        return jsonify({"error": f"Indexing failed: {e}"}), 500
+
+
+@app.route('/api/v1/vector/index/node', methods=['POST'])
+def vector_index_node():
+    """
+    Index a network node for similarity search.
+    JSON body: {"ip": <str>}
+    """
+    data = request.get_json(silent=True) or {}
+    ip = data.get('ip') or request.args.get('ip')
+    
+    if not ip:
+        return jsonify({"error": "Provide ip"}), 400
+    
+    try:
+        success = engine.index_node_vector(ip)
+        return jsonify({"indexed": success, "ip": ip}), 200
+    except Exception as e:
+        return jsonify({"error": f"Indexing failed: {e}"}), 500
+
+
+@app.route('/api/v1/vector/search/sessions')
+def vector_search_sessions():
+    """
+    Search for similar honeypot sessions.
+    Query params: q=<query>, session_id=<int>, limit=<int>
+    """
+    query = request.args.get('q')
+    session_id = request.args.get('session_id')
+    
+    try:
+        limit = int(request.args.get('limit', 10))
+    except Exception:
+        limit = 10
+    
+    if session_id:
+        try:
+            session_id = int(session_id)
+        except Exception:
+            return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        results = engine.search_similar_sessions(query=query, session_id=session_id, limit=limit)
+        return jsonify({"results": results, "count": len(results)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {e}"}), 500
+
+
+@app.route('/api/v1/vector/search/nodes')
+def vector_search_nodes():
+    """
+    Search for similar network nodes.
+    Query params: q=<query>, ip=<str>, limit=<int>
+    """
+    query = request.args.get('q')
+    ip = request.args.get('ip')
+    
+    try:
+        limit = int(request.args.get('limit', 10))
+    except Exception:
+        limit = 10
+    
+    try:
+        results = engine.search_similar_nodes(query=query, ip=ip, limit=limit)
+        return jsonify({"results": results, "count": len(results)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {e}"}), 500
+
+
+@app.route('/api/v1/vector/search/threats')
+def vector_search_threats():
+    """
+    Search for similar threat analyses.
+    Query params: q=<query>, limit=<int>
+    """
+    query = request.args.get('q')
+    
+    if not query:
+        return jsonify({"error": "Provide q query parameter"}), 400
+    
+    try:
+        limit = int(request.args.get('limit', 10))
+    except Exception:
+        limit = 10
+    
+    try:
+        results = engine.search_similar_threats(query=query, limit=limit)
+        return jsonify({"results": results, "count": len(results)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {e}"}), 500
+
+
+# -------------------------
+# Threat analysis endpoints
+# -------------------------
+@app.route('/api/v1/threats')
+def list_threats():
+    """
+    List threat analyses.
+    Query params: type=<session|access|connection>, limit=<int>
+    """
+    source_type = request.args.get('type')
+    
+    try:
+        limit = int(request.args.get('limit', 100))
+    except Exception:
+        limit = 100
+    
+    try:
+        threats = engine.get_threat_analyses(source_type=source_type, limit=limit)
+        return jsonify({"threats": threats, "count": len(threats)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to list threats: {e}"}), 500
+
+
+@app.route('/api/v1/threat')
+def get_threat():
+    """
+    Get a specific threat analysis.
+    Query params: id=<int>
+    """
+    threat_id = request.args.get('id')
+    
+    if not threat_id:
+        return jsonify({"error": "Provide id parameter"}), 400
+    
+    try:
+        threat_id = int(threat_id)
+    except Exception:
+        return jsonify({"error": "Invalid id"}), 400
+    
+    try:
+        from src.entry import ThreatAnalysis
+        threat = engine.db.query(ThreatAnalysis).filter_by(id=threat_id).first()
+        if not threat:
+            return jsonify({"error": "Threat not found"}), 404
+        return jsonify({"threat": threat.dict()}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get threat: {e}"}), 500
+
+
+# -------------------------
+# Cluster endpoints
+# -------------------------
+@app.route('/api/v1/clusters')
+def list_clusters():
+    """
+    List attacker clusters.
+    Query params: limit=<int>
+    """
+    try:
+        limit = int(request.args.get('limit', 100))
+    except Exception:
+        limit = 100
+    
+    try:
+        clusters = engine.get_attacker_clusters(limit=limit)
+        return jsonify({"clusters": clusters, "count": len(clusters)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to list clusters: {e}"}), 500
+
+
+@app.route('/api/v1/cluster', methods=['GET', 'POST'])
+def cluster():
+    """
+    GET: Get a specific cluster by id.
+    POST: Create a new cluster from session IDs.
+    """
+    if request.method == 'GET':
+        cluster_id = request.args.get('id')
+        
+        if not cluster_id:
+            return jsonify({"error": "Provide id parameter"}), 400
+        
+        try:
+            cluster_id = int(cluster_id)
+        except Exception:
+            return jsonify({"error": "Invalid id"}), 400
+        
+        try:
+            from src.entry import AttackerCluster
+            cluster = engine.db.query(AttackerCluster).filter_by(id=cluster_id).first()
+            if not cluster:
+                return jsonify({"error": "Cluster not found"}), 404
+            return jsonify({"cluster": cluster.dict()}), 200
+        except Exception as e:
+            return jsonify({"error": f"Failed to get cluster: {e}"}), 500
+    
+    # POST: Create cluster
+    data = request.get_json(silent=True) or {}
+    session_ids = data.get('session_ids', [])
+    name = data.get('name')
+    
+    if not session_ids:
+        return jsonify({"error": "Provide session_ids array"}), 400
+    
+    try:
+        session_ids = [int(sid) for sid in session_ids]
+    except Exception:
+        return jsonify({"error": "Invalid session_ids"}), 400
+    
+    try:
+        result = engine.create_attacker_cluster(session_ids, name=name)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify({"cluster": result}), 201
+    except Exception as e:
+        return jsonify({"error": f"Failed to create cluster: {e}"}), 500
+
+
+@app.route('/api/v1/similar/attackers')
+def similar_attackers():
+    """
+    Find attackers similar to a given IP.
+    Query params: ip=<str>, threshold=<float>, limit=<int>
+    """
+    ip = request.args.get('ip')
+    
+    if not ip:
+        return jsonify({"error": "Provide ip parameter"}), 400
+    
+    try:
+        threshold = float(request.args.get('threshold', 0.7))
+    except Exception:
+        threshold = 0.7
+    
+    try:
+        limit = int(request.args.get('limit', 10))
+    except Exception:
+        limit = 10
+    
+    try:
+        results = engine.find_similar_attackers(ip, threshold=threshold, limit=limit)
+        return jsonify({"ip": ip, "similar_attackers": results, "count": len(results)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Search failed: {e}"}), 500
+
 
 @app.route('/favicon.ico')
 def favicon():

@@ -23,7 +23,7 @@ except ImportError:
 from scapy.all import traceroute
 
 # package-relative import
-from .entry import Base, NetworkNode, AnalysisSession, PathHop, WebAccess, Organization, ISP, OutgoingConnection
+from .entry import Base, NetworkNode, AnalysisSession, PathHop, WebAccess, Organization, ISP, OutgoingConnection, ThreatAnalysis, AttackerCluster
 
 # new honeypot models
 from .honeypot_models import HoneypotSession, HoneypotCommand, HoneypotFile, HoneypotNetworkFlow
@@ -32,6 +32,21 @@ from .honeypot_models import HoneypotSession, HoneypotCommand, HoneypotFile, Hon
 from .forensic_extension import (
     banner_grab, ssh_banner, fetch_http_headers, fetch_tls_info, nmap_service_scan, safe_http_enum_well_known
 )
+
+# Vector store and LLM analyzer imports
+try:
+    from .vector_store import VectorStore
+    _HAS_VECTOR_STORE = True
+except ImportError:
+    VectorStore = None
+    _HAS_VECTOR_STORE = False
+
+try:
+    from .llm_analyzer import LLMAnalyzer
+    _HAS_LLM_ANALYZER = True
+except ImportError:
+    LLMAnalyzer = None
+    _HAS_LLM_ANALYZER = False
 
 import nmap
 
@@ -239,6 +254,40 @@ class ForensicEngine:
                 self.logger.info("Started outgoing connection watcher thread (name=%s).", t.name)
             else:
                 self.logger.warning("Outgoing connection monitoring requested but psutil not available. Install psutil to enable.")
+
+        # Initialize vector store for similarity search
+        self.vector_store = None
+        if _HAS_VECTOR_STORE:
+            try:
+                vector_enabled = os.environ.get("VECTOR_STORE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+                if vector_enabled:
+                    self.vector_store = VectorStore()
+                    if self.vector_store.is_available():
+                        self.logger.info("Vector store initialized successfully")
+                    else:
+                        self.logger.warning("Vector store initialized but not fully available (check Qdrant/embedding model)")
+            except Exception as e:
+                self.logger.warning("Failed to initialize vector store: %s", e)
+                self.vector_store = None
+        else:
+            self.logger.info("Vector store module not available; similarity search disabled.")
+
+        # Initialize LLM analyzer for threat analysis
+        self.llm_analyzer = None
+        if _HAS_LLM_ANALYZER:
+            try:
+                llm_enabled = os.environ.get("LLM_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+                if llm_enabled:
+                    self.llm_analyzer = LLMAnalyzer()
+                    if self.llm_analyzer.is_available():
+                        self.logger.info("LLM analyzer initialized with model: %s", self.llm_analyzer.model)
+                    else:
+                        self.logger.warning("LLM analyzer initialized but not available (check Ollama installation)")
+            except Exception as e:
+                self.logger.warning("Failed to initialize LLM analyzer: %s", e)
+                self.llm_analyzer = None
+        else:
+            self.logger.info("LLM analyzer module not available; threat analysis disabled.")
 
     def _ensure_aware(self, dt):
         if not dt:
@@ -1884,6 +1933,511 @@ class ForensicEngine:
     def get_organization(self, org_id):
         org = self.db.query(Organization).filter_by(id=org_id).first()
         return org.dict() if org else None
+
+    # -------------------------
+    # LLM Analysis Methods
+    # -------------------------
+    def analyze_session_with_llm(self, session_id: int, save_result: bool = True) -> dict:
+        """
+        Analyze a honeypot session using the LLM analyzer.
+        
+        Args:
+            session_id: ID of the session to analyze
+            save_result: Whether to save the analysis to the database
+            
+        Returns:
+            Analysis results dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        session = self.get_honeypot_session(session_id)
+        if not session:
+            return {"error": "Session not found"}
+        
+        analysis = self.llm_analyzer.analyze_session(session)
+        
+        if save_result and analysis.get("analyzed"):
+            try:
+                threat = ThreatAnalysis(
+                    source_type="session",
+                    source_id=session_id,
+                    source_ip=session.get("src_ip"),
+                    model_used=self.llm_analyzer.model,
+                    threat_type=analysis.get("threat_type"),
+                    severity=analysis.get("severity"),
+                    confidence=analysis.get("confidence"),
+                    summary=analysis.get("summary"),
+                    tactics=analysis.get("tactics", []),
+                    techniques=analysis.get("techniques", []),
+                    indicators=analysis.get("indicators", []),
+                    attacker_profile=analysis.get("attacker_profile", {}),
+                    raw_analysis=analysis
+                )
+                self.db.add(threat)
+                self.db.commit()
+                analysis["threat_analysis_id"] = threat.id
+                
+                # Index the threat for similarity search
+                if self.vector_store and self.vector_store.is_available():
+                    if self.vector_store.index_threat(analysis, threat.id):
+                        threat.is_indexed = True
+                        self.db.commit()
+            except Exception as e:
+                self.logger.error("Failed to save threat analysis: %s", e)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+        
+        return analysis
+
+    def analyze_accesses_with_llm(self, ip: str = None, limit: int = 100, save_result: bool = True) -> dict:
+        """
+        Analyze web access logs using the LLM analyzer.
+        
+        Args:
+            ip: Optional IP address to filter accesses
+            limit: Maximum number of accesses to analyze
+            save_result: Whether to save the analysis to the database
+            
+        Returns:
+            Analysis results dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        if ip:
+            accesses = self.get_accesses_for_ip(ip, limit=limit)
+        else:
+            rows = self.db.query(WebAccess).order_by(WebAccess.timestamp.desc()).limit(limit).all()
+            accesses = [r.dict() for r in rows]
+        
+        if not accesses:
+            return {"error": "No accesses found"}
+        
+        analysis = self.llm_analyzer.analyze_access_logs(accesses)
+        
+        if save_result and analysis.get("analyzed"):
+            try:
+                threat = ThreatAnalysis(
+                    source_type="access",
+                    source_ip=ip,
+                    model_used=self.llm_analyzer.model,
+                    threat_type=", ".join(analysis.get("attack_types", [])),
+                    severity=analysis.get("severity"),
+                    summary=analysis.get("summary"),
+                    raw_analysis=analysis
+                )
+                self.db.add(threat)
+                self.db.commit()
+                analysis["threat_analysis_id"] = threat.id
+            except Exception as e:
+                self.logger.error("Failed to save access analysis: %s", e)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+        
+        return analysis
+
+    def analyze_connections_with_llm(self, direction: str = None, limit: int = 100, save_result: bool = True) -> dict:
+        """
+        Analyze network connections using the LLM analyzer.
+        
+        Args:
+            direction: Optional direction filter ('outgoing' or 'internal')
+            limit: Maximum number of connections to analyze
+            save_result: Whether to save the analysis to the database
+            
+        Returns:
+            Analysis results dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        connections = self.get_outgoing_connections(limit=limit, direction=direction)
+        
+        if not connections:
+            return {"error": "No connections found"}
+        
+        analysis = self.llm_analyzer.analyze_connections(connections)
+        
+        if save_result and analysis.get("analyzed"):
+            try:
+                threat = ThreatAnalysis(
+                    source_type="connection",
+                    model_used=self.llm_analyzer.model,
+                    severity=analysis.get("severity"),
+                    summary=analysis.get("summary"),
+                    raw_analysis=analysis
+                )
+                self.db.add(threat)
+                self.db.commit()
+                analysis["threat_analysis_id"] = threat.id
+            except Exception as e:
+                self.logger.error("Failed to save connection analysis: %s", e)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+        
+        return analysis
+
+    def plan_countermeasure(self, threat_analysis_id: int, context: dict = None) -> dict:
+        """
+        Generate countermeasure recommendations for a threat analysis.
+        
+        Args:
+            threat_analysis_id: ID of the threat analysis to plan countermeasures for
+            context: Additional context for countermeasure planning
+            
+        Returns:
+            Countermeasure plan dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        threat = self.db.query(ThreatAnalysis).filter_by(id=threat_analysis_id).first()
+        if not threat:
+            return {"error": "Threat analysis not found"}
+        
+        threat_dict = threat.dict()
+        plan = self.llm_analyzer.plan_countermeasure(threat_dict, context)
+        
+        if plan.get("planned"):
+            try:
+                threat.countermeasures = plan
+                self.db.commit()
+            except Exception as e:
+                self.logger.error("Failed to save countermeasure plan: %s", e)
+                try:
+                    self.db.rollback()
+                except Exception:
+                    pass
+        
+        return plan
+
+    def examine_artifact_with_llm(self, artifact_name: str) -> dict:
+        """
+        Examine a captured artifact using the LLM analyzer.
+        
+        Args:
+            artifact_name: Name of the artifact file
+            
+        Returns:
+            Examination results dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        artifacts_dir = os.path.join(self.honeypot_data_dir, "artifacts")
+        artifact_path = os.path.abspath(os.path.join(artifacts_dir, artifact_name))
+        
+        # Security check: ensure path is within artifacts directory
+        if not artifact_path.startswith(os.path.abspath(artifacts_dir)):
+            return {"error": "Invalid artifact path"}
+        
+        if not os.path.isfile(artifact_path):
+            return {"error": "Artifact not found"}
+        
+        return self.llm_analyzer.examine_artifact(artifact_path)
+
+    def unify_threats(self, session_ids: list) -> dict:
+        """
+        Create a unified threat profile from multiple sessions.
+        
+        Args:
+            session_ids: List of session IDs to unify
+            
+        Returns:
+            Unified threat profile dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        sessions = []
+        for sid in session_ids:
+            session = self.get_honeypot_session(sid)
+            if session:
+                sessions.append(session)
+        
+        if not sessions:
+            return {"error": "No valid sessions found"}
+        
+        # Get existing analyses if any
+        analyses = []
+        for sid in session_ids:
+            threat = self.db.query(ThreatAnalysis).filter_by(source_type="session", source_id=sid).first()
+            if threat:
+                analyses.append(threat.dict())
+        
+        return self.llm_analyzer.unify_threat_profile(sessions, analyses)
+
+    # -------------------------
+    # Vector Search Methods
+    # -------------------------
+    def index_session_vector(self, session_id: int) -> bool:
+        """
+        Index a honeypot session for vector similarity search.
+        
+        Args:
+            session_id: ID of the session to index
+            
+        Returns:
+            True if successful
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return False
+        
+        session = self.get_honeypot_session(session_id)
+        if not session:
+            return False
+        
+        return self.vector_store.index_session(session, session_id)
+
+    def index_node_vector(self, ip: str) -> bool:
+        """
+        Index a network node for vector similarity search.
+        
+        Args:
+            ip: IP address of the node
+            
+        Returns:
+            True if successful
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return False
+        
+        node = self.get_entry(ip)
+        if not node:
+            return False
+        
+        return self.vector_store.index_node(node, ip)
+
+    def search_similar_sessions(self, query: str = None, session_id: int = None, limit: int = 10, filters: dict = None) -> list:
+        """
+        Search for similar honeypot sessions.
+        
+        Args:
+            query: Text query to search for
+            session_id: Session ID to find similar sessions to
+            limit: Maximum number of results
+            filters: Optional filters
+            
+        Returns:
+            List of similar sessions with scores
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return []
+        
+        session = None
+        if session_id:
+            session = self.get_honeypot_session(session_id)
+        
+        return self.vector_store.search_similar_sessions(
+            query_text=query,
+            query_session=session,
+            limit=limit,
+            filters=filters
+        )
+
+    def search_similar_nodes(self, query: str = None, ip: str = None, limit: int = 10, filters: dict = None) -> list:
+        """
+        Search for similar network nodes.
+        
+        Args:
+            query: Text query to search for
+            ip: IP address to find similar nodes to
+            limit: Maximum number of results
+            filters: Optional filters
+            
+        Returns:
+            List of similar nodes with scores
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return []
+        
+        node = None
+        if ip:
+            node = self.get_entry(ip)
+        
+        return self.vector_store.search_similar_nodes(
+            query_text=query,
+            query_node=node,
+            limit=limit,
+            filters=filters
+        )
+
+    def search_similar_threats(self, query: str, limit: int = 10, filters: dict = None) -> list:
+        """
+        Search for similar threat analyses.
+        
+        Args:
+            query: Text query describing the threat
+            limit: Maximum number of results
+            filters: Optional filters
+            
+        Returns:
+            List of similar threats with scores
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return []
+        
+        return self.vector_store.search_similar_threats(query, limit=limit, filters=filters)
+
+    # -------------------------
+    # Clustering Methods
+    # -------------------------
+    def create_attacker_cluster(self, session_ids: list, name: str = None) -> dict:
+        """
+        Create a cluster of related attackers from session IDs.
+        
+        Args:
+            session_ids: List of session IDs to cluster
+            name: Optional name for the cluster
+            
+        Returns:
+            Cluster information dictionary
+        """
+        sessions = []
+        ips = set()
+        
+        for sid in session_ids:
+            session = self.get_honeypot_session(sid)
+            if session:
+                sessions.append(session)
+                if session.get("src_ip"):
+                    ips.add(session["src_ip"])
+        
+        if not sessions:
+            return {"error": "No valid sessions found"}
+        
+        # Generate unified profile if LLM available
+        unified_profile = {}
+        if self.llm_analyzer and self.llm_analyzer.is_available():
+            unified_profile = self.unify_threats(session_ids)
+        
+        # Create cluster record
+        cluster = AttackerCluster(
+            name=name or f"Cluster_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+            member_ips=list(ips),
+            member_session_ids=session_ids,
+            unified_profile=unified_profile,
+            member_count=len(sessions),
+            common_tactics=unified_profile.get("common_patterns", []),
+            overall_severity=unified_profile.get("threat_actor_profile", {}).get("sophistication")
+        )
+        
+        self.db.add(cluster)
+        try:
+            self.db.commit()
+            return cluster.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to create cluster: {e}"}
+
+    def find_similar_attackers(self, ip: str, threshold: float = 0.7, limit: int = 10) -> list:
+        """
+        Find attackers similar to the given IP based on behavior.
+        
+        Args:
+            ip: IP address to find similar attackers for
+            threshold: Similarity threshold (0-1)
+            limit: Maximum number of results
+            
+        Returns:
+            List of similar attackers with similarity scores
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return []
+        
+        # Get sessions for this IP
+        sessions = self.db.query(HoneypotSession).filter_by(src_ip=ip).all()
+        if not sessions:
+            return []
+        
+        # Combine all sessions into query
+        all_commands = []
+        for sess in sessions:
+            sess_dict = sess.dict()
+            full_session = self.get_honeypot_session(sess.id)
+            if full_session:
+                for cmd in full_session.get("commands", []):
+                    if cmd.get("command"):
+                        all_commands.append(cmd["command"])
+        
+        query = f"IP: {ip} | Commands: {'; '.join(all_commands[:20])}"
+        
+        similar = self.vector_store.search_similar_sessions(
+            query_text=query,
+            limit=limit,
+            score_threshold=threshold
+        )
+        
+        # Group by IP
+        by_ip = {}
+        for s in similar:
+            src_ip = s.get("src_ip")
+            if src_ip and src_ip != ip:
+                if src_ip not in by_ip or s["score"] > by_ip[src_ip]["score"]:
+                    by_ip[src_ip] = s
+        
+        return sorted(by_ip.values(), key=lambda x: x["score"], reverse=True)
+
+    def get_threat_analyses(self, source_type: str = None, limit: int = 100) -> list:
+        """
+        Get threat analyses, optionally filtered by source type.
+        
+        Args:
+            source_type: Optional filter ('session', 'access', 'connection')
+            limit: Maximum number of results
+            
+        Returns:
+            List of threat analysis dictionaries
+        """
+        query = self.db.query(ThreatAnalysis).order_by(ThreatAnalysis.analyzed_at.desc())
+        if source_type:
+            query = query.filter_by(source_type=source_type)
+        rows = query.limit(limit).all()
+        return [r.dict() for r in rows]
+
+    def get_attacker_clusters(self, limit: int = 100) -> list:
+        """
+        Get all attacker clusters.
+        
+        Args:
+            limit: Maximum number of results
+            
+        Returns:
+            List of cluster dictionaries
+        """
+        rows = self.db.query(AttackerCluster).order_by(AttackerCluster.created_at.desc()).limit(limit).all()
+        return [r.dict() for r in rows]
+
+    def get_llm_status(self) -> dict:
+        """Get the status of the LLM analyzer."""
+        if not self.llm_analyzer:
+            return {"available": False, "reason": "LLM analyzer not initialized"}
+        
+        return {
+            "available": self.llm_analyzer.is_available(),
+            **self.llm_analyzer.get_model_info()
+        }
+
+    def get_vector_store_status(self) -> dict:
+        """Get the status of the vector store."""
+        if not self.vector_store:
+            return {"available": False, "reason": "Vector store not initialized"}
+        
+        status = {
+            "available": self.vector_store.is_available()
+        }
+        
+        if self.vector_store.is_available():
+            status["collections"] = self.vector_store.get_collection_stats()
+        
+        return status
 
 
 if __name__ == "__main__":
