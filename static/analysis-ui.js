@@ -2,7 +2,7 @@
 // Provides interface for LLM analysis, similarity search, and threat analysis
 
 import { apiGet, apiPost } from './api.js';
-import { escapeHtml } from './util.js';
+import { escapeHtml, getSeverityBadge } from './util.js';
 import * as ui from './ui.js';
 
 const $ = id => document.getElementById(id);
@@ -350,16 +350,6 @@ function renderThreatAnalysesList(threats) {
   container.appendChild(frag);
 }
 
-function getSeverityBadge(severity) {
-  switch ((severity || '').toLowerCase()) {
-    case 'critical': return '<span style="background: #ef4444; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">CRITICAL</span>';
-    case 'high': return '<span style="background: #f59e0b; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">HIGH</span>';
-    case 'medium': return '<span style="background: #f59e0b; color: black; padding: 1px 4px; border-radius: 3px; font-size: 10px;">MEDIUM</span>';
-    case 'low': return '<span style="background: #6b7280; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">LOW</span>';
-    default: return '<span style="background: #9ca3af; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">UNKNOWN</span>';
-  }
-}
-
 // ============================================
 // MODALS
 // ============================================
@@ -562,40 +552,39 @@ function showFormalReportModal(report, sessionId) {
     title: `📋 Formal Forensic Report - Session ${sessionId}`,
     html,
     allowPin: true,
-    onPin: () => ui.addPinnedCard(`Report: Session ${sessionId}`, html)
-  });
-  
-  // Add event listeners for download and copy buttons
-  setTimeout(() => {
-    const downloadBtn = document.getElementById('downloadReportBtn');
-    const copyBtn = document.getElementById('copyReportBtn');
-    
-    if (downloadBtn) {
-      downloadBtn.addEventListener('click', () => {
-        const dataStr = JSON.stringify(report, null, 2);
-        const dataBlob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(dataBlob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `forensic-report-session-${sessionId}-${Date.now()}.json`;
-        link.click();
-        URL.revokeObjectURL(url);
-        ui.toast('Report downloaded');
-      });
-    }
-    
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
-        const dataStr = JSON.stringify(report, null, 2);
-        navigator.clipboard.writeText(dataStr).then(() => {
-          ui.toast('Report copied to clipboard');
-        }).catch(err => {
-          console.error('Failed to copy:', err);
-          ui.toast('Failed to copy report');
+    onPin: () => ui.addPinnedCard(`Report: Session ${sessionId}`, html),
+    onShow: () => {
+      // Add event listeners after modal is shown (more reliable than setTimeout)
+      const downloadBtn = document.getElementById('downloadReportBtn');
+      const copyBtn = document.getElementById('copyReportBtn');
+      
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+          const dataStr = JSON.stringify(report, null, 2);
+          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+          const url = URL.createObjectURL(dataBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `forensic-report-session-${sessionId}-${Date.now()}.json`;
+          link.click();
+          URL.revokeObjectURL(url);
+          ui.toast('Report downloaded');
         });
-      });
+      }
+      
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          const dataStr = JSON.stringify(report, null, 2);
+          navigator.clipboard.writeText(dataStr).then(() => {
+            ui.toast('Report copied to clipboard');
+          }).catch(err => {
+            console.error('Failed to copy:', err);
+            ui.toast('Failed to copy report');
+          });
+        });
+      }
     }
-  }, 100);
+  });
 }
 
 function showCountermeasuresModal(data, sessionId) {

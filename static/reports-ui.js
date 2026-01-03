@@ -2,7 +2,7 @@
 // Provides interface for viewing and managing forensic reports
 
 import { apiGet, apiPost } from './api.js';
-import { escapeHtml } from './util.js';
+import { escapeHtml, getSeverityBadge } from './util.js';
 import * as ui from './ui.js';
 import { generateFormalReport } from './analysis-ui.js';
 
@@ -133,13 +133,42 @@ function renderReportsList(reports) {
   container.appendChild(frag);
 }
 
-function getSeverityBadge(severity) {
-  switch ((severity || '').toLowerCase()) {
-    case 'critical': return '<span style="background: #ef4444; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">CRITICAL</span>';
-    case 'high': return '<span style="background: #f59e0b; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">HIGH</span>';
-    case 'medium': return '<span style="background: #f59e0b; color: black; padding: 1px 4px; border-radius: 3px; font-size: 10px;">MEDIUM</span>';
-    case 'low': return '<span style="background: #6b7280; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">LOW</span>';
-    default: return '<span style="background: #9ca3af; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">UNKNOWN</span>';
+// ============================================
+// EXPORT FUNCTIONALITY
+// ============================================
+
+/**
+ * Export multiple reports as JSON
+ * @param {Array} reportsList - List of report objects to export
+ */
+async function exportReports(reportsList) {
+  if (!reportsList.length) {
+    ui.toast('No reports to export');
+    return;
+  }
+  
+  ui.setLoading(true, `Exporting ${reportsList.length} report${reportsList.length !== 1 ? 's' : ''}...`);
+  const fullReports = [];
+  
+  for (const report of reportsList) {
+    if (report.session_id) {
+      try {
+        const res = await apiPost('/api/v1/llm/formal_report', { session_id: report.session_id }, { timeout: 180000 });
+        if (res.ok) {
+          fullReports.push(res.data);
+        }
+      } catch (err) {
+        console.error(`Failed to fetch report for session ${report.session_id}:`, err);
+      }
+    }
+  }
+  
+  ui.setLoading(false);
+  
+  if (fullReports.length) {
+    exportReportsAsJSON(fullReports);
+  } else {
+    ui.toast('No reports could be exported');
   }
 }
 
@@ -166,68 +195,13 @@ function setupEventHandlers() {
   
   // Export all reports
   $('exportAllReportsBtn')?.addEventListener('click', async () => {
-    if (!reportsCache.length) {
-      ui.toast('No reports to export');
-      return;
-    }
-    
-    // Fetch full report data for all cached reports
-    ui.setLoading(true, 'Exporting reports...');
-    const fullReports = [];
-    
-    for (const report of reportsCache) {
-      if (report.session_id) {
-        try {
-          const res = await apiPost('/api/v1/llm/formal_report', { session_id: report.session_id }, { timeout: 180000 });
-          if (res.ok) {
-            fullReports.push(res.data);
-          }
-        } catch (err) {
-          console.error(`Failed to fetch report for session ${report.session_id}:`, err);
-        }
-      }
-    }
-    
-    ui.setLoading(false);
-    
-    if (fullReports.length) {
-      exportReportsAsJSON(fullReports);
-    } else {
-      ui.toast('No reports could be exported');
-    }
+    await exportReports(reportsCache);
   });
   
   // Export recent reports
   $('exportRecentReportsBtn')?.addEventListener('click', async () => {
-    if (!reportsCache.length) {
-      ui.toast('No reports to export');
-      return;
-    }
-    
     const recentReports = reportsCache.slice(0, 10);
-    ui.setLoading(true, 'Exporting recent reports...');
-    const fullReports = [];
-    
-    for (const report of recentReports) {
-      if (report.session_id) {
-        try {
-          const res = await apiPost('/api/v1/llm/formal_report', { session_id: report.session_id }, { timeout: 180000 });
-          if (res.ok) {
-            fullReports.push(res.data);
-          }
-        } catch (err) {
-          console.error(`Failed to fetch report for session ${report.session_id}:`, err);
-        }
-      }
-    }
-    
-    ui.setLoading(false);
-    
-    if (fullReports.length) {
-      exportReportsAsJSON(fullReports);
-    } else {
-      ui.toast('No reports could be exported');
-    }
+    await exportReports(recentReports);
   });
   
   // Report row click handler - view report

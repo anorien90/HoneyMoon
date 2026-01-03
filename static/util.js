@@ -10,6 +10,21 @@ export function truncate(str = '', len = 80) {
 }
 
 /**
+ * Get a severity badge HTML for display
+ * @param {string} severity - Severity level (critical, high, medium, low)
+ * @returns {string} HTML for severity badge
+ */
+export function getSeverityBadge(severity) {
+  switch ((severity || '').toLowerCase()) {
+    case 'critical': return '<span style="background: #ef4444; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">CRITICAL</span>';
+    case 'high': return '<span style="background: #f59e0b; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">HIGH</span>';
+    case 'medium': return '<span style="background: #f59e0b; color: black; padding: 1px 4px; border-radius: 3px; font-size: 10px;">MEDIUM</span>';
+    case 'low': return '<span style="background: #6b7280; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">LOW</span>';
+    default: return '<span style="background: #9ca3af; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">UNKNOWN</span>';
+  }
+}
+
+/**
  * Get pointer coordinates from a mouse or pointer event.
  * Uses PointerEvent properties when available, falls back to MouseEvent.
  * This avoids Firefox deprecation warnings about mozPressure and mozInputSource.
