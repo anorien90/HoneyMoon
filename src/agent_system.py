@@ -130,6 +130,8 @@ class AgentSystem:
     - Execute active investigations on demand
     - Provide recommendations for countermeasures
     - Execute approved countermeasures
+    
+    Tasks are persisted to the database for durability across restarts.
     """
     
     def __init__(self, mcp_server=None, forensic_engine=None, max_workers: int = 3):
@@ -159,6 +161,9 @@ class AgentSystem:
         
         # Pre-defined task templates
         self._task_templates = self._create_task_templates()
+        
+        # Load persisted tasks from database if engine is available
+        self._load_persisted_tasks()
     
     def bind_mcp_server(self, mcp_server):
         """Bind an MCP server to the agent system."""
@@ -167,6 +172,109 @@ class AgentSystem:
     def bind_engine(self, engine):
         """Bind a forensic engine to the agent system."""
         self.engine = engine
+        # Reload persisted tasks when engine is bound
+        self._load_persisted_tasks()
+    
+    def _load_persisted_tasks(self):
+        """Load persisted tasks from database on startup."""
+        if not self.engine or not hasattr(self.engine, 'db'):
+            return
+        
+        try:
+            from src.entry import AgentTaskRecord
+            
+            # Load incomplete tasks (pending, running, paused)
+            records = self.engine.db.query(AgentTaskRecord).filter(
+                AgentTaskRecord.status.in_(['pending', 'running', 'paused'])
+            ).all()
+            
+            for record in records:
+                task = AgentTask(
+                    id=record.id,
+                    task_type=TaskType(record.task_type),
+                    name=record.name,
+                    description=record.description or "",
+                    priority=TaskPriority(record.priority),
+                    parameters=record.parameters or {},
+                    status=TaskStatus(record.status),
+                    created_at=record.created_at,
+                    started_at=record.started_at,
+                    completed_at=record.completed_at,
+                    result=record.result,
+                    error=record.error,
+                    progress=record.progress or 0.0,
+                    requires_confirmation=record.requires_confirmation,
+                    confirmed=record.confirmed,
+                    schedule_interval=record.schedule_interval,
+                    next_run=record.next_run,
+                    run_count=record.run_count or 0
+                )
+                
+                with self._lock:
+                    self._tasks[task.id] = task
+                
+                # Reset running tasks to pending (they were interrupted)
+                if task.status == TaskStatus.RUNNING:
+                    task.status = TaskStatus.PENDING
+                    task.progress = 0.0
+                    self._persist_task(task)
+                
+                logger.info("Loaded persisted task: %s (%s)", task.name, task.id)
+            
+            logger.info("Loaded %d persisted tasks from database", len(records))
+        except Exception as e:
+            logger.warning("Failed to load persisted tasks: %s", e)
+    
+    def _persist_task(self, task: AgentTask):
+        """Persist a task to the database."""
+        if not self.engine or not hasattr(self.engine, 'db'):
+            return
+        
+        try:
+            from src.entry import AgentTaskRecord
+            
+            record = self.engine.db.query(AgentTaskRecord).filter_by(id=task.id).first()
+            
+            if not record:
+                record = AgentTaskRecord(
+                    id=task.id,
+                    task_type=task.task_type.value,
+                    name=task.name,
+                    description=task.description,
+                    priority=task.priority.value,
+                    parameters=task.parameters,
+                    status=task.status.value,
+                    created_at=task.created_at,
+                    started_at=task.started_at,
+                    completed_at=task.completed_at,
+                    result=task.result,
+                    error=task.error,
+                    progress=task.progress,
+                    requires_confirmation=task.requires_confirmation,
+                    confirmed=task.confirmed,
+                    schedule_interval=task.schedule_interval,
+                    next_run=task.next_run,
+                    run_count=task.run_count
+                )
+                self.engine.db.add(record)
+            else:
+                record.status = task.status.value
+                record.started_at = task.started_at
+                record.completed_at = task.completed_at
+                record.result = task.result
+                record.error = task.error
+                record.progress = task.progress
+                record.confirmed = task.confirmed
+                record.next_run = task.next_run
+                record.run_count = task.run_count
+            
+            self.engine.db.commit()
+        except Exception as e:
+            logger.error("Failed to persist task %s: %s", task.id, e)
+            try:
+                self.engine.db.rollback()
+            except Exception:
+                pass
     
     def _create_task_templates(self) -> Dict[str, Dict[str, Any]]:
         """Create pre-defined task templates."""
@@ -297,6 +405,9 @@ class AgentSystem:
                     task.status = TaskStatus.RUNNING
                     task.started_at = datetime.now(timezone.utc)
                 
+                # Persist running status
+                self._persist_task(task)
+                
                 try:
                     self._execute_task(task)
                     
@@ -304,6 +415,9 @@ class AgentSystem:
                         task.status = TaskStatus.COMPLETED
                         task.completed_at = datetime.now(timezone.utc)
                         task.progress = 1.0
+                    
+                    # Persist completed status
+                    self._persist_task(task)
                 
                 except Exception as e:
                     logger.error("Task %s failed: %s", task_id, e)
@@ -311,6 +425,9 @@ class AgentSystem:
                         task.status = TaskStatus.FAILED
                         task.error = str(e)
                         task.completed_at = datetime.now(timezone.utc)
+                    
+                    # Persist failed status
+                    self._persist_task(task)
                 
             except Empty:
                 continue
@@ -687,6 +804,9 @@ class AgentSystem:
         
         with self._lock:
             self._tasks[task.id] = task
+        
+        # Persist task to database
+        self._persist_task(task)
         
         # Queue task immediately if not requiring confirmation
         if not requires_confirmation or task.confirmed:

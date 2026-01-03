@@ -23,7 +23,7 @@ except ImportError:
 from scapy.all import traceroute
 
 # package-relative import
-from .entry import Base, NetworkNode, AnalysisSession, PathHop, WebAccess, Organization, ISP, OutgoingConnection, ThreatAnalysis, AttackerCluster
+from .entry import Base, NetworkNode, AnalysisSession, PathHop, WebAccess, Organization, ISP, OutgoingConnection, ThreatAnalysis, AttackerCluster, AgentTaskRecord, ChatConversation, CountermeasureRecord
 
 # new honeypot models
 from .honeypot_models import HoneypotSession, HoneypotCommand, HoneypotFile, HoneypotNetworkFlow
@@ -1252,6 +1252,12 @@ class ForensicEngine:
         evtype = ev.get("event") or ev.get("message") or ev.get("type") or ""
         if evtype and "session.closed" in evtype:
             hp_session.end_ts = datetime.now(timezone.utc)
+            # Auto-index completed sessions to vector store for RAG
+            try:
+                session.flush()  # Ensure session ID is available
+                self._auto_index_session(hp_session.id)
+            except Exception:
+                pass
         if evtype and "login.success" in evtype:
             hp_session.auth_success = "success"
             hp_session.username = ev.get("username") or hp_session.username
@@ -1268,6 +1274,8 @@ class ForensicEngine:
                     hp_session.extra = hp_session.extra or {}
                     if node:
                         hp_session.extra["node_cached"] = {"ip": node.ip, "organization": node.organization, "asn": node.asn, "country": node.country}
+                        # Auto-index node to vector store for RAG
+                        self._auto_index_node(node.ip, node.dict())
             except Exception:
                 pass
 
@@ -2573,6 +2581,417 @@ class ForensicEngine:
         return self.llm_analyzer.generate_detection_rules(
             session, threat_analysis, rule_formats
         )
+
+    # -------------------------
+    # Chat Conversation Methods
+    # -------------------------
+    def create_conversation(
+        self,
+        title: str = None,
+        context_type: str = None,
+        context_id: str = None,
+        initial_message: str = None
+    ) -> dict:
+        """
+        Create a new chat conversation for persistent analysis sessions.
+        
+        Args:
+            title: Optional conversation title
+            context_type: Type of context (session, node, threat, cluster)
+            context_id: ID of the related entity
+            initial_message: Optional initial user message
+            
+        Returns:
+            Conversation dictionary
+        """
+        messages = []
+        if initial_message:
+            messages.append({
+                "role": "user",
+                "content": initial_message,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        
+        conversation = ChatConversation(
+            title=title or f"Analysis {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+            context_type=context_type,
+            context_id=str(context_id) if context_id else None,
+            messages=messages,
+            model_used=self.llm_analyzer.model if self.llm_analyzer else None
+        )
+        
+        self.db.add(conversation)
+        try:
+            self.db.commit()
+            return conversation.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to create conversation: {e}"}
+
+    def add_conversation_message(
+        self,
+        conversation_id: int,
+        role: str,
+        content: str
+    ) -> dict:
+        """
+        Add a message to an existing conversation.
+        
+        Args:
+            conversation_id: ID of the conversation
+            role: Message role (user, assistant, system)
+            content: Message content
+            
+        Returns:
+            Updated conversation dictionary
+        """
+        conversation = self.db.query(ChatConversation).filter_by(id=conversation_id).first()
+        if not conversation:
+            return {"error": "Conversation not found"}
+        
+        messages = conversation.messages or []
+        messages.append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        conversation.messages = messages
+        conversation.updated_at = datetime.now(timezone.utc)
+        
+        try:
+            self.db.commit()
+            return conversation.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to add message: {e}"}
+
+    def get_conversation(self, conversation_id: int) -> dict:
+        """Get a conversation by ID."""
+        conversation = self.db.query(ChatConversation).filter_by(id=conversation_id).first()
+        return conversation.dict() if conversation else {"error": "Conversation not found"}
+
+    def list_conversations(self, context_type: str = None, limit: int = 50) -> list:
+        """List conversations, optionally filtered by context type."""
+        query = self.db.query(ChatConversation).order_by(ChatConversation.updated_at.desc())
+        if context_type:
+            query = query.filter_by(context_type=context_type)
+        rows = query.limit(limit).all()
+        return [r.dict() for r in rows]
+
+    def continue_conversation(
+        self,
+        conversation_id: int,
+        user_message: str
+    ) -> dict:
+        """
+        Continue a conversation with an LLM response.
+        
+        Args:
+            conversation_id: ID of the conversation
+            user_message: User's message
+            
+        Returns:
+            Updated conversation with assistant response
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        conversation = self.db.query(ChatConversation).filter_by(id=conversation_id).first()
+        if not conversation:
+            return {"error": "Conversation not found"}
+        
+        # Add user message
+        messages = conversation.messages or []
+        messages.append({
+            "role": "user",
+            "content": user_message,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Build context for LLM
+        context_parts = []
+        if conversation.context_type == "session" and conversation.context_id:
+            try:
+                session = self.get_honeypot_session(int(conversation.context_id))
+                if session:
+                    context_parts.append(f"Context: Honeypot session {conversation.context_id}")
+                    context_parts.append(f"Source IP: {session.get('src_ip')}")
+                    commands = session.get('commands', [])
+                    if commands:
+                        context_parts.append(f"Commands: {[c['command'] for c in commands[:10]]}")
+            except Exception:
+                pass
+        
+        # Generate response
+        system_prompt = "You are a cybersecurity analyst assistant helping investigate honeypot data and threats."
+        if context_parts:
+            system_prompt += f"\n\n{chr(10).join(context_parts)}"
+        
+        response = self.llm_analyzer._generate(user_message, system_prompt)
+        
+        if response:
+            messages.append({
+                "role": "assistant",
+                "content": response,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        
+        conversation.messages = messages
+        conversation.updated_at = datetime.now(timezone.utc)
+        
+        try:
+            self.db.commit()
+            return conversation.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to update conversation: {e}"}
+
+    # -------------------------
+    # Countermeasure Record Methods
+    # -------------------------
+    def create_countermeasure_record(
+        self,
+        threat_analysis_id: int,
+        plan: dict,
+        name: str = None
+    ) -> dict:
+        """
+        Create a countermeasure record from a plan.
+        
+        Args:
+            threat_analysis_id: ID of the associated threat analysis
+            plan: Countermeasure plan from LLM
+            name: Optional name for the countermeasure
+            
+        Returns:
+            Countermeasure record dictionary
+        """
+        record = CountermeasureRecord(
+            threat_analysis_id=threat_analysis_id,
+            name=name or f"Countermeasure {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
+            description=plan.get('risk_if_unaddressed', ''),
+            plan=plan,
+            status="planned",
+            immediate_actions=plan.get('immediate_actions', []),
+            short_term_actions=plan.get('short_term_actions', []),
+            long_term_actions=plan.get('long_term_actions', []),
+            firewall_rules=plan.get('firewall_rules', []),
+            detection_rules=plan.get('detection_rules', [])
+        )
+        
+        self.db.add(record)
+        try:
+            self.db.commit()
+            return record.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to create countermeasure record: {e}"}
+
+    def approve_countermeasure(
+        self,
+        countermeasure_id: int,
+        approved_by: str = None
+    ) -> dict:
+        """
+        Approve a countermeasure for execution.
+        
+        Args:
+            countermeasure_id: ID of the countermeasure record
+            approved_by: Name/identifier of approver
+            
+        Returns:
+            Updated countermeasure record
+        """
+        record = self.db.query(CountermeasureRecord).filter_by(id=countermeasure_id).first()
+        if not record:
+            return {"error": "Countermeasure record not found"}
+        
+        record.status = "approved"
+        record.approved_by = approved_by
+        record.approved_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(timezone.utc)
+        
+        try:
+            self.db.commit()
+            return record.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to approve countermeasure: {e}"}
+
+    def execute_countermeasure(
+        self,
+        countermeasure_id: int,
+        actions_completed: list = None,
+        actions_failed: list = None,
+        notes: str = None
+    ) -> dict:
+        """
+        Mark a countermeasure as executed and record results.
+        
+        Args:
+            countermeasure_id: ID of the countermeasure record
+            actions_completed: List of completed action descriptions
+            actions_failed: List of failed action descriptions
+            notes: Execution notes
+            
+        Returns:
+            Updated countermeasure record
+        """
+        record = self.db.query(CountermeasureRecord).filter_by(id=countermeasure_id).first()
+        if not record:
+            return {"error": "Countermeasure record not found"}
+        
+        record.status = "completed" if not actions_failed else "partial"
+        record.executed_at = datetime.now(timezone.utc)
+        record.updated_at = datetime.now(timezone.utc)
+        record.actions_completed = actions_completed or []
+        record.actions_failed = actions_failed or []
+        record.execution_notes = notes
+        
+        try:
+            self.db.commit()
+            return record.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to update countermeasure: {e}"}
+
+    def get_countermeasure_record(self, countermeasure_id: int) -> dict:
+        """Get a countermeasure record by ID."""
+        record = self.db.query(CountermeasureRecord).filter_by(id=countermeasure_id).first()
+        return record.dict() if record else {"error": "Countermeasure record not found"}
+
+    def list_countermeasure_records(self, status: str = None, limit: int = 50) -> list:
+        """List countermeasure records, optionally filtered by status."""
+        query = self.db.query(CountermeasureRecord).order_by(CountermeasureRecord.created_at.desc())
+        if status:
+            query = query.filter_by(status=status)
+        rows = query.limit(limit).all()
+        return [r.dict() for r in rows]
+
+    # -------------------------
+    # Auto-indexing for Vector Store
+    # -------------------------
+    def _auto_index_session(self, session_id: int, session_data: dict = None):
+        """
+        Automatically index a honeypot session to the vector store.
+        Called after session ingestion for RAG support.
+        
+        Args:
+            session_id: ID of the session to index
+            session_data: Optional session data dict (fetched if not provided)
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return
+        
+        try:
+            if not session_data:
+                session_data = self.get_honeypot_session(session_id)
+            
+            if session_data:
+                self.vector_store.index_session(session_data, session_id)
+                self.logger.debug("Auto-indexed session %d to vector store", session_id)
+        except Exception as e:
+            self.logger.warning("Failed to auto-index session %d: %s", session_id, e)
+
+    def _auto_index_node(self, ip: str, node_data: dict = None):
+        """
+        Automatically index a network node to the vector store.
+        Called after node creation/update for RAG support.
+        
+        Args:
+            ip: IP address of the node
+            node_data: Optional node data dict (fetched if not provided)
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return
+        
+        try:
+            if not node_data:
+                node_data = self.get_entry(ip)
+            
+            if node_data:
+                self.vector_store.index_node(node_data, ip)
+                self.logger.debug("Auto-indexed node %s to vector store", ip)
+        except Exception as e:
+            self.logger.warning("Failed to auto-index node %s: %s", ip, e)
+
+    def reindex_all_sessions(self, limit: int = None) -> dict:
+        """
+        Reindex all honeypot sessions to the vector store.
+        Useful for rebuilding the vector index after changes.
+        
+        Args:
+            limit: Optional limit on number of sessions to index
+            
+        Returns:
+            Indexing statistics
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return {"error": "Vector store not available"}
+        
+        query = self.db.query(HoneypotSession).order_by(HoneypotSession.start_ts.desc())
+        if limit:
+            query = query.limit(limit)
+        
+        sessions = query.all()
+        indexed = 0
+        errors = 0
+        
+        for sess in sessions:
+            try:
+                session_data = self.get_honeypot_session(sess.id)
+                if session_data and self.vector_store.index_session(session_data, sess.id):
+                    indexed += 1
+                else:
+                    errors += 1
+            except Exception as e:
+                self.logger.warning("Failed to reindex session %d: %s", sess.id, e)
+                errors += 1
+        
+        return {
+            "total_sessions": len(sessions),
+            "indexed": indexed,
+            "errors": errors
+        }
+
+    def reindex_all_nodes(self, limit: int = None) -> dict:
+        """
+        Reindex all network nodes to the vector store.
+        
+        Args:
+            limit: Optional limit on number of nodes to index
+            
+        Returns:
+            Indexing statistics
+        """
+        if not self.vector_store or not self.vector_store.is_available():
+            return {"error": "Vector store not available"}
+        
+        query = self.db.query(NetworkNode)
+        if limit:
+            query = query.limit(limit)
+        
+        nodes = query.all()
+        indexed = 0
+        errors = 0
+        
+        for node in nodes:
+            try:
+                node_data = node.dict()
+                if self.vector_store.index_node(node_data, node.ip):
+                    indexed += 1
+                else:
+                    errors += 1
+            except Exception as e:
+                self.logger.warning("Failed to reindex node %s: %s", node.ip, e)
+                errors += 1
+        
+        return {
+            "total_nodes": len(nodes),
+            "indexed": indexed,
+            "errors": errors
+        }
 
 
 if __name__ == "__main__":
