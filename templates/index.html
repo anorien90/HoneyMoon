@@ -28,6 +28,8 @@
         <div class="tabs" role="tablist">
           <button class="tab-btn active" data-tab="explore" role="tab" aria-selected="true">Explore</button>
           <button class="tab-btn" data-tab="honeypot" role="tab" aria-selected="false">Honeypot</button>
+          <button class="tab-btn" data-tab="agents" role="tab" aria-selected="false">Agents</button>
+          <button class="tab-btn" data-tab="analysis" role="tab" aria-selected="false">Analysis</button>
         </div>
         
         <!-- IP controls -->
@@ -54,6 +56,7 @@
         <button id="toggleRight" title="Toggle right sidebar">▶</button>
         <button id="themeToggle" title="Toggle theme">🌙</button>
         <button id="closeAllPinsBtn" title="Close all pinned cards">Close pins</button>
+        <button id="systemStatusBtn" title="System status" style="background: var(--accent); color: white;">Status</button>
       </div>
     </header>
     
@@ -217,6 +220,90 @@
       </div>
       <div class="card-body">
         <div id="hopList" class="compact-scroll small muted">No traces yet. </div>
+      </div>
+    </div>
+    
+    <!-- Agent System panel -->
+    <div id="agentCard" class="card">
+      <div class="card-header">
+        <h2>🤖 Agent System</h2>
+      </div>
+      <div class="card-body">
+        <div id="agentStatus" class="small muted" style="margin-bottom: 0.75rem;">
+          <div><strong>Status:</strong> <span id="agentRunningStatus">Loading...</span></div>
+          <div><strong>Workers:</strong> <span id="agentWorkerCount">—</span></div>
+          <div><strong>Tasks:</strong> <span id="agentTaskCount">—</span></div>
+        </div>
+        
+        <div class="small muted">Quick Actions</div>
+        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+          <button id="agentInvestigateBtn" class="small" style="background: #3b82f6; color: white;">🔍 Investigate IP</button>
+          <button id="agentThreatHuntBtn" class="small" style="background: #8b5cf6; color: white;">🎯 Threat Hunt</button>
+          <button id="agentMonitorBtn" class="small" style="background: #10b981; color: white;">📡 Monitor</button>
+        </div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Task Templates</div>
+        <div id="agentTemplatesList" class="compact-scroll small muted" style="max-height: 120px; margin-top: 0.5rem;"></div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="small muted">Active Tasks</span>
+          <button id="agentRefreshBtn" class="small">↻ Refresh</button>
+        </div>
+        <div id="agentTasksList" class="compact-scroll small" style="max-height: 200px; margin-top: 0.5rem;"></div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Agent Messages</div>
+        <div id="agentMessagesList" class="compact-scroll small muted" style="max-height: 120px; margin-top: 0.5rem;"></div>
+      </div>
+    </div>
+    
+    <!-- AI Analysis panel -->
+    <div id="analysisCard" class="card">
+      <div class="card-header">
+        <h2>🧠 AI Analysis</h2>
+      </div>
+      <div class="card-body">
+        <div id="llmStatus" class="small muted" style="margin-bottom: 0.75rem;">
+          <div><strong>LLM Status:</strong> <span id="llmAvailableStatus">Loading...</span></div>
+          <div><strong>Model:</strong> <span id="llmModelName">—</span></div>
+          <div><strong>Vector Store:</strong> <span id="vectorStoreStatus">—</span></div>
+        </div>
+        
+        <div class="small muted">Session Analysis</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="analysisSessionId" type="number" placeholder="Session ID" style="flex: 1;" />
+          <button id="analyzeSessionBtn" style="background: #3b82f6; color: white;">Analyze</button>
+        </div>
+        
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <button id="formalReportBtn" class="small" style="background: #8b5cf6; color: white;">📋 Formal Report</button>
+          <button id="countermeasuresBtn" class="small" style="background: #ef4444; color: white;">🛡️ Countermeasures</button>
+          <button id="detectionRulesBtn" class="small" style="background: #f59e0b; color: white;">📜 Detection Rules</button>
+        </div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Similarity Search</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="similarityQuery" type="text" placeholder="Search query or IP" style="flex: 1;" />
+          <button id="searchSimilarBtn" style="background: #10b981; color: white;">Search</button>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <button id="searchSimilarSessionsBtn" class="small">Sessions</button>
+          <button id="searchSimilarNodesBtn" class="small">Nodes</button>
+          <button id="searchSimilarThreatsBtn" class="small">Threats</button>
+          <button id="searchSimilarAttackersBtn" class="small">Attackers</button>
+        </div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Recent Threat Analyses</div>
+        <div id="threatAnalysesList" class="compact-scroll small" style="max-height: 200px; margin-top: 0.5rem;"></div>
       </div>
     </div>
     

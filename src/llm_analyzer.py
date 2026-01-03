@@ -101,37 +101,75 @@ class LLMAnalyzer:
             logger.warning("ollama package not installed. LLM functionality disabled.")
             return
         
-        try:
-            # Configure Ollama host if provided
-            if self.ollama_host and self.ollama_host != "http://localhost:11434":
-                os.environ["OLLAMA_HOST"] = self.ollama_host
-            
-            # Test connection by listing models
-            models = ollama.list()
-            available_models = [m.get("name", "") for m in models.get("models", [])]
-            
-            # Check if our preferred model is available
-            if self._find_matching_model(self.model, available_models):
-                self._model_available = True
-                logger.info("LLM model available: %s", self.model)
-            else:
-                # Try to find any supported model
-                for fallback in self.SUPPORTED_MODELS:
-                    if self._find_matching_model(fallback, available_models):
-                        self.model = fallback
-                        self._model_available = True
-                        logger.info("Using fallback LLM model: %s", self.model)
-                        break
+        # List of Ollama hosts to try (Docker containers first, then local)
+        hosts_to_try = []
+        
+        # Add user-specified host first if different from default
+        if self.ollama_host and self.ollama_host != "http://localhost:11434":
+            hosts_to_try.append(self.ollama_host)
+        
+        # Try Docker container hosts (common ports)
+        docker_hosts = [
+            "http://localhost:11434",  # Default Ollama port
+            "http://127.0.0.1:11434",
+            "http://localhost:11435",  # Alternative port
+            "http://host.docker.internal:11434",  # Docker host access
+        ]
+        for dh in docker_hosts:
+            if dh not in hosts_to_try:
+                hosts_to_try.append(dh)
+        
+        connected = False
+        connection_info = None
+        
+        for host in hosts_to_try:
+            try:
+                # Configure Ollama host
+                os.environ["OLLAMA_HOST"] = host
                 
-                if not self._model_available:
-                    logger.warning("No supported LLM model found. Available models: %s", available_models)
-                    logger.info("To install Granite, run: ollama pull %s", self.DEFAULT_MODEL)
+                # Test connection by listing models
+                models = ollama.list()
+                available_models = [m.get("name", "") for m in models.get("models", [])]
+                
+                connected = True
+                connection_info = {"host": host, "models": available_models}
+                self.ollama_host = host
+                logger.info("Connected to Ollama at %s", host)
+                break
+                
+            except Exception as e:
+                logger.debug("Ollama not available at %s: %s", host, e)
+                continue
+        
+        if not connected:
+            logger.error("Failed to connect to Ollama. No Ollama server found.")
+            logger.info("💡 Hint: For better performance, use Ollama via Docker:")
+            logger.info("   docker run -d -p 11434:11434 --name ollama ollama/ollama")
+            logger.info("   Then pull a model: docker exec ollama ollama pull %s", self.DEFAULT_MODEL)
+            return
+        
+        available_models = connection_info["models"]
+        
+        # Check if our preferred model is available
+        if self._find_matching_model(self.model, available_models):
+            self._model_available = True
+            logger.info("LLM model available: %s", self.model)
+        else:
+            # Try to find any supported model
+            for fallback in self.SUPPORTED_MODELS:
+                if self._find_matching_model(fallback, available_models):
+                    self.model = fallback
+                    self._model_available = True
+                    logger.info("Using fallback LLM model: %s", self.model)
+                    break
             
-            self._client = ollama
-            
-        except Exception as e:
-            logger.error("Failed to initialize Ollama client: %s", e)
-            logger.info("Make sure Ollama is running (ollama serve) and has a model installed.")
+            if not self._model_available:
+                logger.warning("No supported LLM model found. Available models: %s", available_models)
+                logger.info("💡 Hint: For better performance, use Ollama Docker container:")
+                logger.info("   docker exec ollama ollama pull %s", self.DEFAULT_MODEL)
+                logger.info("   Or install locally: ollama pull %s", self.DEFAULT_MODEL)
+        
+        self._client = ollama
     
     def _find_matching_model(self, target_model: str, available_models: List[str]) -> bool:
         """

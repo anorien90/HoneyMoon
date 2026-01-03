@@ -9,6 +9,8 @@ import * as honeypotUI from './honeypot-ui.js';
 import * as dbUI from './db-ui.js';
 import * as honeypotApi from './honeypot.js';
 import * as liveView from './live-view.js';
+import * as agentUI from './agent-ui.js';
+import * as analysisUI from './analysis-ui.js';
 import {
   applySavedInputs,
   getState,
@@ -444,6 +446,14 @@ function initTabs() {
       } else if (tab === 'explore') {
         ui.ensurePanelOpen('explore');
         $('dbPanelQuery')?.focus();
+      } else if (tab === 'agents') {
+        ui.ensurePanelOpen('agents');
+        agentUI.refreshAgentStatus();
+        agentUI.listAgentTasks();
+      } else if (tab === 'analysis') {
+        ui.ensurePanelOpen('analysis');
+        analysisUI.refreshAnalysisStatus();
+        analysisUI.listThreatAnalyses();
       }
       
       // Trigger map resize if map is visible
@@ -725,6 +735,8 @@ async function init() {
     ui.initUI();
     dbUI.initDatabasePanel();
     liveView.initLiveView();
+    agentUI.initAgentUI();
+    analysisUI.initAnalysisUI();
     applySavedInputs({
       ipInput: elements.ipInput(),
       maxttlInput: elements.maxttl(),
