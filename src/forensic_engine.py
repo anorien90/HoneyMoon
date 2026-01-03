@@ -71,11 +71,15 @@ def _is_public_ipv4(ip_addr: str) -> bool:
     """
     Check if the given IP address is a public IPv4 address.
     Returns False for private/internal IPv4, IPv6, or invalid addresses.
+    
+    Note: IPv4-mapped IPv6 addresses (e.g., '::ffff:192.0.2.1') are treated as IPv6
+    and will return False. If needed, extract the IPv4 portion before calling this function.
     """
     if not ip_addr:
         return False
     
     # Check if it's IPv6 (contains colons)
+    # This includes IPv4-mapped IPv6 addresses like ::ffff:192.0.2.1
     if ':' in ip_addr:
         return False
     
@@ -242,6 +246,24 @@ class ForensicEngine:
         if dt.tzinfo is None:
             return dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
+
+    def _trace_ipv4_address(self, ip_addr: str, session, thread_name: str):
+        """
+        Trace a public IPv4 address by creating/enriching its NetworkNode entry with geolocation.
+        This enables the address to be displayed on the map with proper markers.
+        
+        Args:
+            ip_addr: IP address to trace
+            session: SQLAlchemy session to use for database operations
+            thread_name: Name of the calling thread (for logging)
+        """
+        if ip_addr and _is_public_ipv4(ip_addr):
+            try:
+                # Use get_node_from_db_or_web to fetch full geolocation data
+                # This is needed for map display (latitude/longitude)
+                self.get_node_from_db_or_web(ip_addr, session=session)
+            except Exception as trace_err:
+                self.logger.debug("[%s] Error tracing address %s: %s", thread_name, ip_addr, trace_err)
 
     # -------------------------
     # Honeypot watcher state helpers
@@ -1508,20 +1530,8 @@ class ForensicEngine:
                         try:
                             # Trace public IPv4 addresses to create NetworkNode entries with geolocation
                             # This allows the map to show markers for these connections
-                            if remote_addr and _is_public_ipv4(remote_addr):
-                                try:
-                                    # Use ensure_node_minimal for efficiency (doesn't fetch full geolocation immediately)
-                                    # But we want full geolocation for map display, so use get_node_from_db_or_web
-                                    self.get_node_from_db_or_web(remote_addr, session=db_sess)
-                                except Exception as trace_err:
-                                    self.logger.debug("[%s] Error tracing remote address %s: %s", thread_name, remote_addr, trace_err)
-                            
-                            # Also trace local IPv4 addresses if they're public
-                            if local_addr and _is_public_ipv4(local_addr):
-                                try:
-                                    self.get_node_from_db_or_web(local_addr, session=db_sess)
-                                except Exception as trace_err:
-                                    self.logger.debug("[%s] Error tracing local address %s: %s", thread_name, local_addr, trace_err)
+                            self._trace_ipv4_address(remote_addr, db_sess, thread_name)
+                            self._trace_ipv4_address(local_addr, db_sess, thread_name)
                             
                             outgoing_conn = OutgoingConnection(
                                 timestamp=now,

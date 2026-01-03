@@ -907,3 +907,87 @@ class TestIPv4Detection:
         
         # 0.0.0.0/8
         assert _is_public_ipv4("0.0.0.0") is False
+
+
+class TestIPv4Tracing:
+    """Tests for IPv4 address tracing in connections."""
+
+    @pytest.fixture
+    def engine(self, temp_dir, mock_nmap):
+        """Create a ForensicEngine instance for testing."""
+        with patch.dict(os.environ, {
+            "HONEY_AUTO_INGEST": "false",
+            "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
+            "HONEY_DATA_DIR": temp_dir
+        }):
+            from src.forensic_engine import ForensicEngine
+            engine = ForensicEngine(
+                db_path="sqlite:///:memory:",
+                honeypot_data_dir=temp_dir,
+                honey_auto_ingest=False,
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
+            )
+            return engine
+
+    def test_ingest_event_traces_public_ipv4(self, engine):
+        """Test that honeypot events trace public IPv4 addresses."""
+        event = {
+            "session": "test_session_public",
+            "src_ip": "8.8.8.8",
+            "src_port": 12345,
+            "event": "cowrie.session.connect"
+        }
+        
+        # Mock the geolocation lookup
+        with patch.object(engine, 'get_passive_intel', return_value={
+            "ip": "8.8.8.8",
+            "hostname": "dns.google",
+            "organization": "Google LLC",
+            "geo": {"country": "US", "city": "Mountain View", "lat": 37.386, "lon": -122.084},
+            "rdap": {}
+        }):
+            engine._ingest_event(event, session=engine.db, enrich=True)
+            engine.db.commit()
+        
+        # Verify node was created with geolocation data
+        node = engine.get_entry("8.8.8.8")
+        assert node is not None
+        assert node["ip"] == "8.8.8.8"
+        # The node should have been looked up (though mocked)
+        assert node["seen_count"] >= 1
+
+    def test_ingest_event_skips_private_ipv4(self, engine):
+        """Test that honeypot events skip tracing private IPv4 addresses."""
+        event = {
+            "session": "test_session_private",
+            "src_ip": "192.168.1.100",
+            "src_port": 54321,
+            "event": "cowrie.session.connect"
+        }
+        
+        # The get_node_from_db_or_web should not be called for private IPs
+        with patch.object(engine, 'get_node_from_db_or_web') as mock_lookup:
+            engine._ingest_event(event, session=engine.db, enrich=True)
+            engine.db.commit()
+            
+            # Verify lookup was not called for private IP
+            mock_lookup.assert_not_called()
+
+    def test_ingest_event_skips_ipv6(self, engine):
+        """Test that honeypot events skip tracing IPv6 addresses."""
+        event = {
+            "session": "test_session_ipv6",
+            "src_ip": "2001:db8::1",
+            "src_port": 54321,
+            "event": "cowrie.session.connect"
+        }
+        
+        # The get_node_from_db_or_web should not be called for IPv6
+        with patch.object(engine, 'get_node_from_db_or_web') as mock_lookup:
+            engine._ingest_event(event, session=engine.db, enrich=True)
+            engine.db.commit()
+            
+            # Verify lookup was not called for IPv6
+            mock_lookup.assert_not_called()
