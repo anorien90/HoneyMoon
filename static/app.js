@@ -305,7 +305,7 @@ function initPopupActionDelegates() {
     const action = btn.dataset.action;
     const ip = btn.dataset.ip || '';
     const node = await resolveNodeForAction(ip);
-    if (!node) {
+    if (!node && action !== 'analyze') {
       ui.toast('Node details unavailable');
       return;
     }
@@ -325,8 +325,100 @@ function initPopupActionDelegates() {
     } else if (action === 'pin-right') {
       ui.addPanelToZone(`Node ${node.ip || ''}`, buildPinnedNodeHtml(node), 'right');
       ui.toast('Added to right sidebar');
+    } else if (action === 'analyze') {
+      // Find similar attackers using the IP
+      if (!ip) {
+        ui.toast('No IP to analyze');
+        return;
+      }
+      ui.setLoading(true, 'Finding similar attackers...');
+      try {
+        const res = await apiGet(`/api/v1/similar/attackers?ip=${encodeURIComponent(ip)}&limit=10`);
+        ui.setLoading(false);
+        if (res.ok && res.data?.similar_attackers?.length) {
+          showSimilarAttackersModal(ip, res.data.similar_attackers);
+        } else {
+          ui.toast('No similar attackers found');
+        }
+      } catch (err) {
+        ui.setLoading(false);
+        ui.toast('Search failed');
+        console.error('Similar attackers search error:', err);
+      }
     }
   });
+}
+
+// Show similar attackers in a modal
+function showSimilarAttackersModal(originalIp, attackers) {
+  let html = `<div class="similar-attackers">
+    <div class="text-sm muted mb-2">Attackers similar to ${escapeHtml(originalIp)}:</div>`;
+  
+  attackers.forEach(a => {
+    const score = a.similarity ? ` (${Math.round(a.similarity * 100)}% similar)` : '';
+    const location = [a.city, a.country].filter(Boolean).join(', ');
+    html += `<div class="py-2 border-b clickable similar-attacker-row" data-ip="${escapeHtml(a.ip || '')}">
+      <div class="font-medium">${escapeHtml(a.ip || '—')}${score}</div>
+      <div class="text-xs muted">${escapeHtml(a.organization || '')} ${location ? `• ${escapeHtml(location)}` : ''}</div>
+    </div>`;
+  });
+  
+  html += `<div class="mt-3">
+    <button id="showAllOnMap" class="border rounded px-2 py-1 small">Show All on Map</button>
+  </div></div>`;
+  
+  ui.showModal({
+    title: `🔍 Similar Attackers`,
+    html,
+    allowPin: true,
+    onPin: () => ui.addPinnedCard(`Similar to ${originalIp}`, html)
+  });
+  
+  // Set up click handlers
+  setTimeout(() => {
+    document.querySelectorAll('.similar-attacker-row').forEach(row => {
+      row.addEventListener('click', async () => {
+        const ip = row.dataset.ip;
+        if (ip) {
+          await locateAttacker(ip);
+          ui.hideModal();
+        }
+      });
+    });
+    
+    document.getElementById('showAllOnMap')?.addEventListener('click', async () => {
+      ui.setLoading(true, 'Plotting similar attackers...');
+      mapModule.clearMap();
+      
+      // Add original IP
+      const origRes = await apiGet(`/api/v1/locate?ip=${encodeURIComponent(originalIp)}`);
+      if (origRes.ok && origRes.data?.node) {
+        mapModule.addMarkerForNode(origRes.data.node, 'first');
+      }
+      
+      // Add similar attackers
+      for (const a of attackers.slice(0, 20)) {
+        if (a.latitude && a.longitude) {
+          mapModule.addMarkerForNode(a, 'middle');
+        } else if (a.ip) {
+          try {
+            const res = await apiGet(`/api/v1/locate?ip=${encodeURIComponent(a.ip)}`);
+            if (res.ok && res.data?.node) {
+              mapModule.addMarkerForNode(res.data.node, 'middle');
+            }
+          } catch (e) {
+            console.warn(`Failed to locate ${a.ip}`);
+          }
+        }
+      }
+      
+      ui.setLoading(false);
+      mapModule.fitToMarkers();
+      refreshMarkerCount();
+      ui.toast(`Showing ${attackers.length + 1} attackers on map`);
+      ui.hideModal();
+    });
+  }, 200);
 }
 
 // ============================================
