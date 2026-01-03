@@ -68,7 +68,7 @@ def _sha256_text(s: str) -> str:
 
 
 class ForensicEngine:
-    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True, outgoing_monitor=False):
+    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True, outgoing_monitor=True):
         self.logger = logging.getLogger(__name__)
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"

@@ -33,6 +33,7 @@ class TestForensicEngineInit:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -40,7 +41,8 @@ class TestForensicEngineInit:
                 db_path=f"sqlite:///{db_path}",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             
             # Verify tables exist by querying them
@@ -55,6 +57,7 @@ class TestForensicEngineInit:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": honeypot_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -62,7 +65,8 @@ class TestForensicEngineInit:
                 db_path=f"sqlite:///{os.path.join(temp_dir, 'test.db')}",
                 honeypot_data_dir=honeypot_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             
             assert os.path.isdir(honeypot_dir)
@@ -78,6 +82,7 @@ class TestForensicEngineHelpers:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -85,7 +90,8 @@ class TestForensicEngineHelpers:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -118,6 +124,7 @@ class TestOrganizationMethods:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -125,7 +132,8 @@ class TestOrganizationMethods:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -334,6 +342,7 @@ class TestNodeMethods:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -341,7 +350,8 @@ class TestNodeMethods:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -414,6 +424,7 @@ class TestHoneypotMethods:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -421,7 +432,8 @@ class TestHoneypotMethods:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -496,6 +508,7 @@ class TestWebAccessMethods:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -503,7 +516,8 @@ class TestWebAccessMethods:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -549,6 +563,7 @@ class TestLookupMethods:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -556,7 +571,8 @@ class TestLookupMethods:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -615,6 +631,7 @@ class TestHoneypotState:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -622,7 +639,8 @@ class TestHoneypotState:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -654,6 +672,7 @@ class TestNginxState:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir,
             "NGINX_STATE_PATH": os.path.join(temp_dir, ".nginx_access_state.json")
         }):
@@ -662,7 +681,8 @@ class TestNginxState:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
@@ -696,6 +716,7 @@ class TestServiceBanners:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
             "HONEY_DATA_DIR": temp_dir
         }):
             from src.forensic_engine import ForensicEngine
@@ -703,7 +724,8 @@ class TestServiceBanners:
                 db_path="sqlite:///:memory:",
                 honeypot_data_dir=temp_dir,
                 honey_auto_ingest=False,
-                nginx_auto_ingest=False
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
             )
             return engine
 
