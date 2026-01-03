@@ -11,6 +11,7 @@ import * as honeypotApi from './honeypot.js';
 import * as liveView from './live-view.js';
 import * as agentUI from './agent-ui.js';
 import * as analysisUI from './analysis-ui.js';
+import * as reportsUI from './reports-ui.js';
 import {
   applySavedInputs,
   getState,
@@ -454,6 +455,9 @@ function initTabs() {
         ui.ensurePanelOpen('analysis');
         analysisUI.refreshAnalysisStatus();
         analysisUI.listThreatAnalyses();
+      } else if (tab === 'reports') {
+        ui.ensurePanelOpen('reports');
+        reportsUI.refreshReportsList();
       }
       
       // Trigger map resize if map is visible
@@ -737,6 +741,7 @@ async function init() {
     liveView.initLiveView();
     agentUI.initAgentUI();
     analysisUI.initAnalysisUI();
+    reportsUI.initReportsUI();
     applySavedInputs({
       ipInput: elements.ipInput(),
       maxttlInput: elements.maxttl(),

@@ -106,6 +106,16 @@ const BASE_PANELS = {
     minWidth: 300,
     minHeight: 300,
     sourceSelector: '#analysisCard'
+  },
+  reports: {
+    id: 'panel-reports',
+    title: 'Forensic Reports',
+    icon: '📋',
+    defaultZone: ZONES.LEFT,
+    required: false,
+    minWidth: 300,
+    minHeight: 300,
+    sourceSelector: '#reportsCard'
   }
 };
 

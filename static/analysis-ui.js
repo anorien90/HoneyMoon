@@ -2,7 +2,7 @@
 // Provides interface for LLM analysis, similarity search, and threat analysis
 
 import { apiGet, apiPost } from './api.js';
-import { escapeHtml } from './util.js';
+import { escapeHtml, getSeverityBadge } from './util.js';
 import * as ui from './ui.js';
 
 const $ = id => document.getElementById(id);
@@ -350,16 +350,6 @@ function renderThreatAnalysesList(threats) {
   container.appendChild(frag);
 }
 
-function getSeverityBadge(severity) {
-  switch ((severity || '').toLowerCase()) {
-    case 'critical': return '<span style="background: #ef4444; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">CRITICAL</span>';
-    case 'high': return '<span style="background: #f59e0b; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">HIGH</span>';
-    case 'medium': return '<span style="background: #f59e0b; color: black; padding: 1px 4px; border-radius: 3px; font-size: 10px;">MEDIUM</span>';
-    case 'low': return '<span style="background: #6b7280; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">LOW</span>';
-    default: return '<span style="background: #9ca3af; color: white; padding: 1px 4px; border-radius: 3px; font-size: 10px;">UNKNOWN</span>';
-  }
-}
-
 // ============================================
 // MODALS
 // ============================================
@@ -390,22 +380,210 @@ function showAnalysisResultModal(analysis, title) {
   });
 }
 
-function showFormalReportModal(report, sessionId) {
-  const html = `
-    <div class="formal-report">
-      ${report.report ? `
-        <pre style="white-space: pre-wrap; font-size: 12px; max-height: 500px; overflow: auto; font-family: monospace;">${escapeHtml(report.report)}</pre>
-      ` : `
-        <div class="muted">Report generation failed: ${escapeHtml(report.error || 'Unknown error')}</div>
-      `}
+export function showFormalReportModal(report, sessionId) {
+  // Check if we have a structured report or raw text
+  if (report.error) {
+    const html = `<div class="muted">Report generation failed: ${escapeHtml(report.error || 'Unknown error')}</div>`;
+    ui.showModal({
+      title: `Formal Report - Session ${sessionId}`,
+      html,
+      allowPin: true,
+      onPin: () => ui.addPinnedCard(`Report: Session ${sessionId}`, html)
+    });
+    return;
+  }
+  
+  // Build structured HTML for the formal report
+  let html = '<div class="formal-report" style="max-height: 600px; overflow-y: auto; padding: 8px;">';
+  
+  // Report metadata header
+  html += `
+    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <strong style="font-size: 14px;">📋 Formal Forensic Analysis Report</strong>
+        <span class="small muted">${report.generated_at ? new Date(report.generated_at).toLocaleString() : ''}</span>
+      </div>
+      ${report.severity ? `<div class="mb-1"><strong>Severity:</strong> ${getSeverityBadge(report.severity)} ${escapeHtml(report.severity)}</div>` : ''}
+      ${report.confidence ? `<div class="mb-1"><strong>Confidence:</strong> ${Math.round(report.confidence * 100)}%</div>` : ''}
+      ${report.session_id ? `<div class="small muted">Session ID: ${report.session_id}</div>` : ''}
     </div>
   `;
   
+  // Executive summary (highlighted)
+  if (report.summary) {
+    html += `
+      <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+        <strong style="color: #1e40af;">Executive Summary</strong>
+        <p style="margin: 8px 0 0 0; line-height: 1.5;">${escapeHtml(report.summary)}</p>
+      </div>
+    `;
+  }
+  
+  // MITRE ATT&CK mapping (if available)
+  if (report.mitre_tactics?.length || report.mitre_techniques?.length) {
+    html += '<div style="margin-bottom: 16px;">';
+    html += '<strong style="font-size: 13px;">🎯 MITRE ATT&CK Mapping</strong>';
+    
+    if (report.mitre_tactics?.length) {
+      html += '<div style="margin: 8px 0;"><strong class="small">Tactics:</strong> ';
+      html += report.mitre_tactics.map(t => `<span style="background: #dbeafe; color: #1e40af; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px;">${escapeHtml(t)}</span>`).join('');
+      html += '</div>';
+    }
+    
+    if (report.mitre_techniques?.length) {
+      html += '<div style="margin: 8px 0;"><strong class="small">Techniques:</strong> ';
+      html += report.mitre_techniques.map(t => `<span style="background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 3px; font-size: 11px; margin-right: 4px;">${escapeHtml(t)}</span>`).join('');
+      html += '</div>';
+    }
+    
+    html += '</div>';
+  }
+  
+  // Report sections
+  if (report.report_sections) {
+    html += '<div style="margin-bottom: 16px;">';
+    
+    Object.entries(report.report_sections).forEach(([sectionTitle, sectionContent]) => {
+      html += `
+        <div style="margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px;">
+          <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--text-primary);">${escapeHtml(sectionTitle)}</h3>
+          <div style="font-size: 12px; line-height: 1.6;">
+      `;
+      
+      // Handle different content types
+      if (typeof sectionContent === 'string') {
+        html += `<div style="white-space: pre-wrap;">${escapeHtml(sectionContent)}</div>`;
+      } else if (typeof sectionContent === 'object' && sectionContent !== null) {
+        // Render object as formatted key-value pairs
+        Object.entries(sectionContent).forEach(([key, value]) => {
+          html += `<div style="margin-bottom: 8px;"><strong>${escapeHtml(key)}:</strong> `;
+          if (typeof value === 'string') {
+            html += escapeHtml(value);
+          } else {
+            html += `<pre style="font-size: 11px; margin: 4px 0; padding: 4px; background: var(--bg-secondary); border-radius: 3px;">${escapeHtml(JSON.stringify(value, null, 2))}</pre>`;
+          }
+          html += '</div>';
+        });
+      }
+      
+      html += '</div></div>';
+    });
+    
+    html += '</div>';
+  }
+  
+  // IOCs (Indicators of Compromise)
+  if (report.iocs) {
+    html += '<div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 12px; margin-bottom: 16px; border-radius: 4px;">';
+    html += '<strong style="color: #991b1b;">🚨 Indicators of Compromise (IOCs)</strong>';
+    
+    if (report.iocs.network_iocs?.length) {
+      html += '<div style="margin-top: 8px;"><strong class="small">Network IOCs:</strong><ul style="margin: 4px 0; padding-left: 20px; font-size: 11px;">';
+      report.iocs.network_iocs.forEach(ioc => {
+        html += `<li>${escapeHtml(ioc)}</li>`;
+      });
+      html += '</ul></div>';
+    }
+    
+    if (report.iocs.host_iocs?.length) {
+      html += '<div style="margin-top: 8px;"><strong class="small">Host IOCs:</strong><ul style="margin: 4px 0; padding-left: 20px; font-size: 11px;">';
+      report.iocs.host_iocs.forEach(ioc => {
+        html += `<li>${escapeHtml(ioc)}</li>`;
+      });
+      html += '</ul></div>';
+    }
+    
+    if (report.iocs.behavioral_iocs?.length) {
+      html += '<div style="margin-top: 8px;"><strong class="small">Behavioral IOCs:</strong><ul style="margin: 4px 0; padding-left: 20px; font-size: 11px;">';
+      report.iocs.behavioral_iocs.forEach(ioc => {
+        html += `<li>${escapeHtml(ioc)}</li>`;
+      });
+      html += '</ul></div>';
+    }
+    
+    html += '</div>';
+  }
+  
+  // Recommended actions
+  if (report.recommended_actions?.length) {
+    html += '<div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 12px; margin-bottom: 16px; border-radius: 4px;">';
+    html += '<strong style="color: #065f46;">✅ Recommended Actions</strong>';
+    html += '<ol style="margin: 8px 0; padding-left: 20px; font-size: 12px; line-height: 1.6;">';
+    report.recommended_actions.forEach(action => {
+      html += `<li>${escapeHtml(action)}</li>`;
+    });
+    html += '</ol></div>';
+  }
+  
+  // Threat actor profile
+  if (report.threat_actor_profile) {
+    html += '<div style="background: var(--bg-secondary); padding: 12px; margin-bottom: 16px; border-radius: 4px;">';
+    html += '<strong style="font-size: 13px;">👤 Threat Actor Profile</strong>';
+    html += '<div style="margin-top: 8px; font-size: 12px;">';
+    
+    if (report.threat_actor_profile.skill_level) {
+      html += `<div><strong>Skill Level:</strong> ${escapeHtml(report.threat_actor_profile.skill_level)}</div>`;
+    }
+    if (report.threat_actor_profile.automation) {
+      html += `<div><strong>Automation:</strong> ${escapeHtml(report.threat_actor_profile.automation)}</div>`;
+    }
+    if (report.threat_actor_profile.motivation) {
+      html += `<div><strong>Motivation:</strong> ${escapeHtml(report.threat_actor_profile.motivation)}</div>`;
+    }
+    
+    html += '</div></div>';
+  }
+  
+  // Download/export button
+  html += `
+    <div style="text-align: center; padding-top: 12px; border-top: 1px solid var(--border);">
+      <button class="small" id="downloadReportBtn" style="background: #3b82f6; color: white; padding: 6px 12px;">
+        💾 Download JSON
+      </button>
+      <button class="small" id="copyReportBtn" style="background: #6b7280; color: white; padding: 6px 12px; margin-left: 8px;">
+        📋 Copy to Clipboard
+      </button>
+    </div>
+  `;
+  
+  html += '</div>';
+  
   ui.showModal({
-    title: `Formal Report - Session ${sessionId}`,
+    title: `📋 Formal Forensic Report - Session ${sessionId}`,
     html,
     allowPin: true,
-    onPin: () => ui.addPinnedCard(`Report: Session ${sessionId}`, html)
+    onPin: () => ui.addPinnedCard(`Report: Session ${sessionId}`, html),
+    onShow: () => {
+      // Add event listeners after modal is shown (more reliable than setTimeout)
+      const downloadBtn = document.getElementById('downloadReportBtn');
+      const copyBtn = document.getElementById('copyReportBtn');
+      
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+          const dataStr = JSON.stringify(report, null, 2);
+          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+          const url = URL.createObjectURL(dataBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `forensic-report-session-${sessionId}-${Date.now()}.json`;
+          link.click();
+          URL.revokeObjectURL(url);
+          ui.toast('Report downloaded');
+        });
+      }
+      
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          const dataStr = JSON.stringify(report, null, 2);
+          navigator.clipboard.writeText(dataStr).then(() => {
+            ui.toast('Report copied to clipboard');
+          }).catch(err => {
+            console.error('Failed to copy:', err);
+            ui.toast('Failed to copy report');
+          });
+        });
+      }
+    }
   });
 }
 
