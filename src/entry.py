@@ -62,7 +62,8 @@ class ISP(Base):
     extra_data = Column(JSON, default=dict)
 
     # Relationship: ISP.nodes <-> NetworkNode.isp_obj
-    nodes = relationship("NetworkNode", back_populates="isp_obj", cascade="all, delete-orphan")
+    # Using save-update cascade so network nodes persist even if ISP is removed
+    nodes = relationship("NetworkNode", back_populates="isp_obj", cascade="save-update")
 
     def __repr__(self):
         return f"<ISP(id={self.id}, name={self.name}, asn={self.asn})>"

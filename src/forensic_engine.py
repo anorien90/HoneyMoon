@@ -1350,7 +1350,13 @@ class ForensicEngine:
         """Save state for outgoing connection tracking."""
         try:
             # Convert set of tuples to list of lists for JSON serialization
-            data = {"seen_connections": [list(x) for x in list(state.get("seen_connections", set()))[-10000:]]}
+            # Note: we take a random sample since set ordering is undefined
+            import random
+            seen_list = [list(x) for x in state.get("seen_connections", set())]
+            if len(seen_list) > 10000:
+                random.shuffle(seen_list)
+                seen_list = seen_list[:10000]
+            data = {"seen_connections": seen_list}
             with open(self._outgoing_state_path, "w", encoding="utf-8") as fh:
                 json.dump(data, fh)
         except Exception:
@@ -1395,17 +1401,31 @@ class ForensicEngine:
                         remote_addr = conn.raddr.ip if conn.raddr else None
                         remote_port = conn.raddr.port if conn.raddr else None
                         
-                        conn_key = (local_addr, local_port, remote_addr, remote_port, conn.type.name if hasattr(conn.type, 'name') else str(conn.type))
+                        # Determine connection type consistently
+                        conn_type_str = conn.type.name if hasattr(conn.type, 'name') else str(conn.type)
+                        conn_key = (local_addr, local_port, remote_addr, remote_port, conn_type_str)
                         
                         # Skip if we've already seen this connection
                         if conn_key in seen_connections:
                             continue
                         
-                        # Determine if this is outgoing (local IP is private, remote is not)
+                        # Determine if this is outgoing or internal
+                        # Using RFC 1918 private IP ranges
                         direction = "outgoing"
-                        if local_addr:
-                            # Simple heuristic: if remote is private, it's likely not outgoing
-                            if remote_addr and (remote_addr.startswith('10.') or remote_addr.startswith('192.168.') or remote_addr.startswith('172.')):
+                        if remote_addr:
+                            # Check for RFC 1918 private addresses
+                            if remote_addr.startswith('10.') or remote_addr.startswith('192.168.'):
+                                direction = "internal"
+                            # 172.16.0.0/12 = 172.16.0.0 - 172.31.255.255
+                            elif remote_addr.startswith('172.'):
+                                try:
+                                    second_octet = int(remote_addr.split('.')[1])
+                                    if 16 <= second_octet <= 31:
+                                        direction = "internal"
+                                except (ValueError, IndexError):
+                                    pass
+                            # Also check for localhost
+                            elif remote_addr.startswith('127.') or remote_addr == '::1':
                                 direction = "internal"
                         
                         # Get process info if available
@@ -1418,8 +1438,8 @@ class ForensicEngine:
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 pass
                         
-                        # Get protocol type
-                        proto = "tcp" if conn.type.name == 'SOCK_STREAM' else "udp" if conn.type.name == 'SOCK_DGRAM' else str(conn.type)
+                        # Get protocol type using consistent logic
+                        proto = "tcp" if conn_type_str == 'SOCK_STREAM' else "udp" if conn_type_str == 'SOCK_DGRAM' else conn_type_str
                         
                         # Store the connection
                         db_sess = self.Session()
@@ -1453,9 +1473,14 @@ class ForensicEngine:
                         # Mark as seen
                         seen_connections.add(conn_key)
                         
-                        # Limit the size of seen_connections
+                        # Limit the size of seen_connections using random eviction
+                        # (since we're storing in a set, order is not guaranteed)
                         if len(seen_connections) > 50000:
-                            seen_connections = set(list(seen_connections)[-10000:])
+                            # Keep approximately 10000 random entries
+                            import random
+                            seen_list = list(seen_connections)
+                            random.shuffle(seen_list)
+                            seen_connections = set(seen_list[:10000])
                     
                     except Exception as conn_err:
                         self.logger.debug("[%s] Error processing connection: %s", thread_name, conn_err)
