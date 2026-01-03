@@ -2726,7 +2726,7 @@ class ForensicEngine:
         # Generate response
         system_prompt = "You are a cybersecurity analyst assistant helping investigate honeypot data and threats."
         if context_parts:
-            system_prompt += f"\n\n{chr(10).join(context_parts)}"
+            system_prompt += "\n\n" + "\n".join(context_parts)
         
         response = self.llm_analyzer._generate(user_message, system_prompt)
         
@@ -2842,7 +2842,9 @@ class ForensicEngine:
         if not record:
             return {"error": "Countermeasure record not found"}
         
-        record.status = "completed" if not actions_failed else "partial"
+        # Determine status based on whether there were any actual failures
+        has_failures = actions_failed and len(actions_failed) > 0
+        record.status = "partial" if has_failures else "completed"
         record.executed_at = datetime.now(timezone.utc)
         record.updated_at = datetime.now(timezone.utc)
         record.actions_completed = actions_completed or []
