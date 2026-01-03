@@ -778,3 +778,449 @@ locateIP('8.8.8.8')
     .then(data => console.log(data.node.country))
     .catch(err => console.error(err));
 ```
+
+---
+
+## MCP Server Endpoints
+
+The Model Context Protocol (MCP) server provides tool-based access for LLM agents to interact with the forensic engine.
+
+### List MCP Tools
+
+List available MCP tools.
+
+```http
+GET /api/v1/mcp/tools?category=<category>&include_intrusive=<0|1>
+```
+
+**Parameters:**
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| category | string | No | - | Filter by category (investigation, analysis, search, countermeasure, monitoring) |
+| include_intrusive | string | No | 1 | Include intrusive tools |
+
+**Response:**
+```json
+{
+  "tools": [
+    {
+      "name": "get_ip_intel",
+      "description": "Get comprehensive intelligence data for an IP address",
+      "category": "investigation",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ip": {"type": "string", "description": "IP address to investigate"}
+        },
+        "required": ["ip"]
+      },
+      "requires_confirmation": false,
+      "is_intrusive": false
+    }
+  ],
+  "count": 20
+}
+```
+
+---
+
+### Get MCP Tool
+
+Get details of a specific MCP tool.
+
+```http
+GET /api/v1/mcp/tool?name=<tool_name>
+```
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| name | string | Yes | Tool name |
+
+**Response:**
+```json
+{
+  "tool": {
+    "name": "analyze_session",
+    "description": "Perform LLM-based threat analysis on a honeypot session",
+    "category": "analysis",
+    "parameters": { ... },
+    "requires_confirmation": false,
+    "is_intrusive": false
+  }
+}
+```
+
+---
+
+### Execute MCP Tool
+
+Execute an MCP tool.
+
+```http
+POST /api/v1/mcp/execute
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "tool": "get_ip_intel",
+  "params": {
+    "ip": "8.8.8.8"
+  },
+  "confirmed": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "node": {
+      "ip": "8.8.8.8",
+      "hostname": "dns.google",
+      "organization": "Google LLC",
+      "country": "United States"
+    },
+    "organization": { ... },
+    "recent_accesses": []
+  },
+  "error": null,
+  "metadata": {
+    "tool": "get_ip_intel",
+    "executed_at": "2024-01-15T10:30:00Z"
+  }
+}
+```
+
+**Intrusive Tools:**
+Some tools (marked `is_intrusive: true`) require confirmation. Set `confirmed: true` in the request body to execute them.
+
+---
+
+### Get RAG Context
+
+Get relevant context for a query using semantic search (RAG).
+
+```http
+GET /api/v1/mcp/context?q=<query>&limit=<int>
+```
+
+**Parameters:**
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| q | string | Yes | - | Query string |
+| limit | int | No | 5 | Maximum results per category |
+
+**Response:**
+```json
+{
+  "query": "ssh brute force attack",
+  "retrieved_at": "2024-01-15T10:30:00Z",
+  "similar_sessions": [
+    {
+      "session_id": 1,
+      "score": 0.85,
+      "src_ip": "192.168.1.100"
+    }
+  ],
+  "similar_threats": [],
+  "similar_nodes": []
+}
+```
+
+---
+
+## Agent System Endpoints
+
+The agent system provides autonomous task execution for security investigation and response.
+
+### Get Agent Status
+
+Get the status of the agent system.
+
+```http
+GET /api/v1/agent/status
+```
+
+**Response:**
+```json
+{
+  "running": true,
+  "workers": 3,
+  "total_tasks": 15,
+  "tasks_by_status": {
+    "completed": 10,
+    "running": 2,
+    "pending": 3
+  },
+  "pending_messages": 25,
+  "mcp_server_bound": true,
+  "engine_bound": true
+}
+```
+
+---
+
+### List Agent Tasks
+
+List agent tasks with optional filtering.
+
+```http
+GET /api/v1/agent/tasks?status=<status>&type=<type>&limit=<int>
+```
+
+**Parameters:**
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| status | string | No | - | Filter by status (pending, running, completed, failed, cancelled, paused) |
+| type | string | No | - | Filter by type (investigation, monitoring, analysis, countermeasure, scheduled) |
+| limit | int | No | 50 | Maximum results |
+
+**Response:**
+```json
+{
+  "tasks": [
+    {
+      "id": "uuid-1234",
+      "task_type": "investigation",
+      "name": "IP Investigation",
+      "description": "Investigating suspicious IP",
+      "priority": 3,
+      "status": "completed",
+      "created_at": "2024-01-15T10:00:00Z",
+      "completed_at": "2024-01-15T10:05:00Z",
+      "progress": 1.0,
+      "result": { ... }
+    }
+  ],
+  "count": 1
+}
+```
+
+---
+
+### Get Agent Task
+
+Get details of a specific task.
+
+```http
+GET /api/v1/agent/task?id=<task_id>
+```
+
+**Response:**
+```json
+{
+  "task": {
+    "id": "uuid-1234",
+    "task_type": "investigation",
+    "name": "IP Investigation",
+    "status": "completed",
+    "progress": 1.0,
+    "result": {
+      "findings": [
+        {
+          "type": "threat_detected",
+          "details": { ... }
+        }
+      ],
+      "recommendations": []
+    }
+  }
+}
+```
+
+---
+
+### Create Agent Task
+
+Create a new agent task.
+
+```http
+POST /api/v1/agent/task/create
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "type": "investigation",
+  "name": "Investigate Suspicious IP",
+  "description": "Full investigation of IP 192.168.1.100",
+  "parameters": {
+    "ip": "192.168.1.100",
+    "steps": [
+      {"tool": "get_ip_intel", "params": {"ip": "192.168.1.100"}},
+      {"tool": "search_similar_attackers", "params": {"ip": "192.168.1.100"}}
+    ]
+  },
+  "priority": "high",
+  "requires_confirmation": false
+}
+```
+
+**Task Types:**
+- `investigation` - Active investigation of threats
+- `monitoring` - Background monitoring
+- `analysis` - Batch analysis tasks
+- `countermeasure` - Counter-measure execution
+- `scheduled` - Recurring scheduled tasks
+
+**Priorities:** `low`, `normal`, `high`, `critical`
+
+**Response:**
+```json
+{
+  "task": {
+    "id": "uuid-5678",
+    "task_type": "investigation",
+    "name": "Investigate Suspicious IP",
+    "status": "pending",
+    ...
+  }
+}
+```
+
+---
+
+### Create Task from Template
+
+Create a task using a pre-defined template.
+
+```http
+POST /api/v1/agent/task/template
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "template": "investigate_ip",
+  "parameters": {
+    "ip": "192.168.1.100"
+  },
+  "priority": "high"
+}
+```
+
+**Available Templates:**
+| Template | Description |
+|----------|-------------|
+| `investigate_ip` | Comprehensive IP investigation |
+| `investigate_session` | Deep honeypot session investigation |
+| `threat_hunting` | Proactive threat hunting |
+| `monitor_live_activity` | Live activity monitoring (scheduled) |
+| `periodic_analysis` | Periodic session analysis (scheduled) |
+| `countermeasure_planning` | Plan countermeasures for a threat |
+
+---
+
+### Confirm Task
+
+Confirm a task that requires confirmation (typically countermeasure tasks).
+
+```http
+POST /api/v1/agent/task/confirm
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "task_id": "uuid-1234"
+}
+```
+
+**Response:**
+```json
+{
+  "confirmed": true,
+  "task_id": "uuid-1234"
+}
+```
+
+---
+
+### Cancel Task
+
+Cancel a pending or paused task.
+
+```http
+POST /api/v1/agent/task/cancel
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "task_id": "uuid-1234"
+}
+```
+
+---
+
+### List Task Templates
+
+List available task templates.
+
+```http
+GET /api/v1/agent/templates
+```
+
+**Response:**
+```json
+{
+  "templates": [
+    {
+      "name": "investigate_ip",
+      "task_type": "investigation",
+      "description": "Comprehensive investigation of an IP address",
+      "priority": 3,
+      "requires_confirmation": false,
+      "schedule_interval": null
+    }
+  ]
+}
+```
+
+---
+
+### Get Agent Messages
+
+Get messages from the agent system.
+
+```http
+GET /api/v1/agent/messages?since=<timestamp>&limit=<int>
+```
+
+**Parameters:**
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| since | string | No | - | ISO timestamp to filter messages |
+| limit | int | No | 100 | Maximum messages |
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "id": "msg-uuid",
+      "task_id": "task-uuid",
+      "message_type": "warning",
+      "content": "Detected 3 anomalies in live connections",
+      "data": { "anomalies": [...] },
+      "timestamp": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "count": 1
+}
+```
+
+**Message Types:**
+- `info` - Informational messages
+- `warning` - Warning messages
+- `error` - Error messages
+- `finding` - Security findings
+- `recommendation` - Recommendations from the agent

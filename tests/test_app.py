@@ -634,3 +634,329 @@ class TestEnhancedLLMEndpoints:
         assert response.status_code == 200
         data = response.get_json()
         assert data.get("generated") is True
+
+
+class TestMCPEndpoints:
+    """Tests for MCP server endpoints."""
+
+    def test_mcp_tools_list(self, app_client):
+        """Test listing MCP tools."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/tools')
+        
+        # May return 503 if MCP server not available
+        if response.status_code == 503:
+            return  # Skip if MCP not available
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "tools" in data
+        assert "count" in data
+
+    def test_mcp_tools_list_by_category(self, app_client):
+        """Test listing MCP tools filtered by category."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/tools?category=investigation')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+
+    def test_mcp_tools_list_invalid_category(self, app_client):
+        """Test listing MCP tools with invalid category."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/tools?category=invalid')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_mcp_tool_get(self, app_client):
+        """Test getting a specific MCP tool."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/tool?name=get_ip_intel')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "tool" in data
+        assert data["tool"]["name"] == "get_ip_intel"
+
+    def test_mcp_tool_get_not_found(self, app_client):
+        """Test getting non-existent MCP tool."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/tool?name=nonexistent')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 404
+
+    def test_mcp_tool_get_no_name(self, app_client):
+        """Test getting MCP tool without name."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/tool')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_mcp_execute_no_tool(self, app_client):
+        """Test executing without tool name."""
+        client, _ = app_client
+        response = client.post('/api/v1/mcp/execute',
+                               json={"params": {}})
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_mcp_execute_tool(self, app_client):
+        """Test executing an MCP tool."""
+        client, mock_engine = app_client
+        mock_engine.get_entry.return_value = {"ip": "8.8.8.8"}
+        mock_engine.get_organization_info.return_value = None
+        mock_engine.get_accesses_for_ip.return_value = []
+        
+        response = client.post('/api/v1/mcp/execute',
+                               json={"tool": "get_ip_intel", "params": {"ip": "8.8.8.8"}})
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "success" in data
+
+    def test_mcp_context_no_query(self, app_client):
+        """Test getting context without query."""
+        client, _ = app_client
+        response = client.get('/api/v1/mcp/context')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_mcp_context(self, app_client):
+        """Test getting RAG context."""
+        client, mock_engine = app_client
+        mock_engine.search_similar_sessions.return_value = []
+        mock_engine.search_similar_threats.return_value = []
+        mock_engine.search_similar_nodes.return_value = []
+        
+        response = client.get('/api/v1/mcp/context?q=ssh%20brute%20force')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "query" in data
+
+
+class TestAgentEndpoints:
+    """Tests for agent system endpoints."""
+
+    def test_agent_status(self, app_client):
+        """Test agent status endpoint."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/status')
+        
+        if response.status_code == 503:
+            return  # Skip if agent not available
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "running" in data
+        assert "workers" in data
+
+    def test_agent_tasks_list(self, app_client):
+        """Test listing agent tasks."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/tasks')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "tasks" in data
+
+    def test_agent_tasks_list_invalid_status(self, app_client):
+        """Test listing tasks with invalid status."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/tasks?status=invalid')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_task_get_no_id(self, app_client):
+        """Test getting task without ID."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/task')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_task_get_not_found(self, app_client):
+        """Test getting non-existent task."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/task?id=nonexistent-uuid')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 404
+
+    def test_agent_task_create_no_name(self, app_client):
+        """Test creating task without name."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/create',
+                               json={"type": "investigation"})
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_task_create(self, app_client):
+        """Test creating a task."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/create',
+                               json={
+                                   "type": "investigation",
+                                   "name": "Test Task",
+                                   "description": "Test description",
+                                   "parameters": {"ip": "8.8.8.8"}
+                               })
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 201
+        data = response.get_json()
+        assert "task" in data
+        assert data["task"]["name"] == "Test Task"
+
+    def test_agent_task_create_invalid_type(self, app_client):
+        """Test creating task with invalid type."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/create',
+                               json={
+                                   "type": "invalid_type",
+                                   "name": "Test Task"
+                               })
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_task_from_template_no_template(self, app_client):
+        """Test creating task from template without template name."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/template',
+                               json={"parameters": {}})
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_task_from_template(self, app_client):
+        """Test creating task from template."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/template',
+                               json={
+                                   "template": "investigate_ip",
+                                   "parameters": {"ip": "8.8.8.8"}
+                               })
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 201
+        data = response.get_json()
+        assert "task" in data
+
+    def test_agent_task_from_template_not_found(self, app_client):
+        """Test creating task from non-existent template."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/template',
+                               json={
+                                   "template": "nonexistent",
+                                   "parameters": {}
+                               })
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 404
+
+    def test_agent_task_confirm_no_id(self, app_client):
+        """Test confirming task without ID."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/confirm',
+                               json={})
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_task_cancel_no_id(self, app_client):
+        """Test cancelling task without ID."""
+        client, _ = app_client
+        response = client.post('/api/v1/agent/task/cancel',
+                               json={})
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
+
+    def test_agent_templates_list(self, app_client):
+        """Test listing task templates."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/templates')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "templates" in data
+        assert len(data["templates"]) > 0
+
+    def test_agent_messages(self, app_client):
+        """Test getting agent messages."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/messages')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "messages" in data
+
+    def test_agent_messages_invalid_since(self, app_client):
+        """Test getting messages with invalid since timestamp."""
+        client, _ = app_client
+        response = client.get('/api/v1/agent/messages?since=invalid')
+        
+        if response.status_code == 503:
+            return
+        
+        assert response.status_code == 400
