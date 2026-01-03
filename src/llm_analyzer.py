@@ -129,7 +129,7 @@ class LLMAnalyzer:
                 
                 # Test connection by listing models
                 models = ollama.list()
-                available_models = [m.get("name", "") for m in models.get("models", [])]
+                available_models = [m.get("model", "") for m in models.get("models", [])]
                 
                 connected = True
                 connection_info = {"host": host, "models": available_models}
