@@ -30,6 +30,7 @@
           <button class="tab-btn" data-tab="honeypot" role="tab" aria-selected="false">Honeypot</button>
           <button class="tab-btn" data-tab="agents" role="tab" aria-selected="false">Agents</button>
           <button class="tab-btn" data-tab="analysis" role="tab" aria-selected="false">Analysis</button>
+          <button class="tab-btn" data-tab="reports" role="tab" aria-selected="false">Reports</button>
         </div>
         
         <!-- IP controls -->
@@ -304,6 +305,42 @@
         
         <div class="small muted">Recent Threat Analyses</div>
         <div id="threatAnalysesList" class="compact-scroll small" style="max-height: 200px; margin-top: 0.5rem;"></div>
+      </div>
+    </div>
+    
+    <!-- Reports panel -->
+    <div id="reportsCard" class="card">
+      <div class="card-header">
+        <h2>📋 Forensic Reports</h2>
+      </div>
+      <div class="card-body">
+        <div class="small muted" style="margin-bottom: 0.75rem;">
+          Generate and view formal forensic analysis reports for honeypot sessions.
+        </div>
+        
+        <div class="small muted">Generate New Report</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+          <input id="reportSessionId" type="number" placeholder="Session ID" style="flex: 1;" />
+          <button id="generateReportBtn" style="background: #8b5cf6; color: white;">Generate</button>
+        </div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="small muted">Generated Reports</span>
+          <button id="refreshReportsBtn" class="small">↻ Refresh</button>
+        </div>
+        <div id="reportsList" class="compact-scroll small" style="max-height: 300px; margin-top: 0.5rem;">
+          <div class="muted">No reports generated yet</div>
+        </div>
+        
+        <hr style="margin: 0.75rem 0; border: none; border-top: 1px solid var(--border);" />
+        
+        <div class="small muted">Bulk Export</div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
+          <button id="exportAllReportsBtn" class="small" style="background: #6b7280; color: white;">📦 Export All</button>
+          <button id="exportRecentReportsBtn" class="small" style="background: #6b7280; color: white;">📄 Export Recent (10)</button>
+        </div>
       </div>
     </div>
     
