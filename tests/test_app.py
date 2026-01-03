@@ -492,3 +492,145 @@ class TestLiveConnectionsEndpoint:
         
         assert response.status_code == 200
         # Verify limit was passed (indirectly via successful response)
+
+
+class TestEnhancedLLMEndpoints:
+    """Tests for enhanced LLM analysis endpoints."""
+
+    def test_formal_report_no_session_id(self, app_client):
+        """Test formal report without session_id returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/formal_report',
+                               json={})
+        
+        assert response.status_code == 400
+
+    def test_formal_report_invalid_session_id(self, app_client):
+        """Test formal report with invalid session_id returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/formal_report',
+                               json={"session_id": "invalid"})
+        
+        assert response.status_code == 400
+
+    def test_formal_report_success(self, app_client):
+        """Test successful formal report generation."""
+        client, mock_engine = app_client
+        mock_engine.generate_formal_report.return_value = {
+            "generated": True,
+            "severity": "high",
+            "summary": "Test summary"
+        }
+        
+        response = client.post('/api/v1/llm/formal_report',
+                               json={"session_id": 1})
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data.get("generated") is True
+
+    def test_countermeasures_no_session_id(self, app_client):
+        """Test countermeasures without session_id returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/countermeasures',
+                               json={})
+        
+        assert response.status_code == 400
+
+    def test_countermeasures_success(self, app_client):
+        """Test successful countermeasure recommendation."""
+        client, mock_engine = app_client
+        mock_engine.recommend_active_countermeasures.return_value = {
+            "recommended": True,
+            "recommended_capability": "json_tail",
+            "priority": "high"
+        }
+        
+        response = client.post('/api/v1/llm/countermeasures',
+                               json={"session_id": 1})
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data.get("recommended") is True
+
+    def test_output_plugin_no_trigger_events(self, app_client):
+        """Test output plugin without trigger_events returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/output_plugin',
+                               json={"response_actions": ["alert"]})
+        
+        assert response.status_code == 400
+
+    def test_output_plugin_no_response_actions(self, app_client):
+        """Test output plugin without response_actions returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/output_plugin',
+                               json={"trigger_events": ["cowrie.command.input"]})
+        
+        assert response.status_code == 400
+
+    def test_output_plugin_success(self, app_client):
+        """Test successful output plugin generation."""
+        client, mock_engine = app_client
+        mock_engine.generate_output_plugin_code.return_value = {
+            "generated": True,
+            "plugin_code": "# Generated code"
+        }
+        
+        response = client.post('/api/v1/llm/output_plugin',
+                               json={
+                                   "trigger_events": ["cowrie.command.input"],
+                                   "response_actions": ["alert"]
+                               })
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data.get("generated") is True
+
+    def test_realtime_analysis_no_commands(self, app_client):
+        """Test realtime analysis without commands returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/realtime_analysis',
+                               json={})
+        
+        assert response.status_code == 400
+
+    def test_realtime_analysis_success(self, app_client):
+        """Test successful realtime analysis."""
+        client, mock_engine = app_client
+        mock_engine.analyze_real_time_commands.return_value = {
+            "analyzed": True,
+            "urgency": "high",
+            "threat_detected": True
+        }
+        
+        response = client.post('/api/v1/llm/realtime_analysis',
+                               json={"commands": ["ls -la", "cat /etc/passwd"]})
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data.get("analyzed") is True
+
+    def test_detection_rules_no_session_id(self, app_client):
+        """Test detection rules without session_id returns 400."""
+        client, _ = app_client
+        response = client.post('/api/v1/llm/detection_rules',
+                               json={})
+        
+        assert response.status_code == 400
+
+    def test_detection_rules_success(self, app_client):
+        """Test successful detection rules generation."""
+        client, mock_engine = app_client
+        mock_engine.generate_detection_rules.return_value = {
+            "generated": True,
+            "sigma_rules": ["rule: test"],
+            "firewall_rules": ["iptables -A INPUT -s 1.2.3.4 -j DROP"]
+        }
+        
+        response = client.post('/api/v1/llm/detection_rules',
+                               json={"session_id": 1})
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data.get("generated") is True

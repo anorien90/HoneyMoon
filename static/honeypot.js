@@ -46,6 +46,35 @@ export async function unifyThreats(sessionIds) {
   return apiPost('/api/v1/llm/unify', { session_ids: sessionIds }, { timeout: 120000, retries: 1 });
 }
 
+// NEW: Enhanced LLM Analysis endpoints
+export async function generateFormalReport(sessionId) {
+  return apiPost('/api/v1/llm/formal_report', { session_id: sessionId }, { timeout: 180000, retries: 1 });
+}
+
+export async function getActiveCountermeasures(sessionId, capabilities = null) {
+  const body = { session_id: sessionId };
+  if (capabilities) body.capabilities = capabilities;
+  return apiPost('/api/v1/llm/countermeasures', body, { timeout: 120000, retries: 1 });
+}
+
+export async function generateOutputPlugin(triggerEvents, responseActions, conditions = null) {
+  const body = { trigger_events: triggerEvents, response_actions: responseActions };
+  if (conditions) body.conditions = conditions;
+  return apiPost('/api/v1/llm/output_plugin', body, { timeout: 120000, retries: 1 });
+}
+
+export async function analyzeRealtimeCommands(commands, context = null) {
+  const body = { commands };
+  if (context) body.context = context;
+  return apiPost('/api/v1/llm/realtime_analysis', body, { timeout: 60000, retries: 1 });
+}
+
+export async function generateDetectionRules(sessionId, ruleFormats = null) {
+  const body = { session_id: sessionId };
+  if (ruleFormats) body.rule_formats = ruleFormats;
+  return apiPost('/api/v1/llm/detection_rules', body, { timeout: 120000, retries: 1 });
+}
+
 // Vector search endpoints
 export async function indexSession(sessionId) {
   return apiPost('/api/v1/vector/index/session', { session_id: sessionId }, { timeout: 60000, retries: 1 });

@@ -870,6 +870,152 @@ def llm_unify_threats():
         return jsonify({"error": f"Unification failed: {e}"}), 500
 
 
+@app.route('/api/v1/llm/formal_report', methods=['POST'])
+def llm_formal_report():
+    """
+    Generate a formal forensic analysis report for a honeypot session.
+    JSON body: {"session_id": <int>}
+    
+    Returns a detailed, formal-format report suitable for:
+    - Incident documentation
+    - Legal proceedings
+    - Compliance reporting
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or request.args.get('session_id')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        result = engine.generate_formal_report(session_id)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Formal report generation failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/countermeasures', methods=['POST'])
+def llm_active_countermeasures():
+    """
+    Get active countermeasure recommendations for a honeypot session.
+    JSON body: {"session_id": <int>, "capabilities": [<str>, ...]}
+    
+    Returns recommendations for Cowrie-based active countermeasures:
+    - JSON tail monitoring
+    - Manhole interaction
+    - Output plugin configuration
+    - Proxy mode setup
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or request.args.get('session_id')
+    capabilities = data.get('capabilities')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        result = engine.recommend_active_countermeasures(session_id, capabilities)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Countermeasure recommendation failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/output_plugin', methods=['POST'])
+def llm_output_plugin():
+    """
+    Generate Cowrie output plugin code for automated responses.
+    JSON body: {
+        "trigger_events": [<str>, ...],
+        "response_actions": [<str>, ...],
+        "conditions": {<filters>}
+    }
+    """
+    data = request.get_json(silent=True) or {}
+    trigger_events = data.get('trigger_events', [])
+    response_actions = data.get('response_actions', [])
+    conditions = data.get('conditions')
+    
+    if not trigger_events:
+        return jsonify({"error": "Provide trigger_events"}), 400
+    
+    if not response_actions:
+        return jsonify({"error": "Provide response_actions"}), 400
+    
+    try:
+        result = engine.generate_output_plugin_code(trigger_events, response_actions, conditions)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Plugin generation failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/realtime_analysis', methods=['POST'])
+def llm_realtime_analysis():
+    """
+    Perform real-time threat analysis on a stream of commands.
+    JSON body: {"commands": [<str>, ...], "context": {<optional context>}}
+    """
+    data = request.get_json(silent=True) or {}
+    commands = data.get('commands', [])
+    context = data.get('context')
+    
+    if not commands:
+        return jsonify({"error": "Provide commands list"}), 400
+    
+    try:
+        result = engine.analyze_real_time_commands(commands, context)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Real-time analysis failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/detection_rules', methods=['POST'])
+def llm_detection_rules():
+    """
+    Generate detection rules based on attack patterns from a session.
+    JSON body: {
+        "session_id": <int>,
+        "rule_formats": [<str>, ...] (optional, e.g., ['sigma', 'firewall'])
+    }
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id') or request.args.get('session_id')
+    rule_formats = data.get('rule_formats')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        result = engine.generate_detection_rules(session_id, rule_formats)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Detection rule generation failed: {e}"}), 500
+
+
 # -------------------------
 # Vector search endpoints
 # -------------------------

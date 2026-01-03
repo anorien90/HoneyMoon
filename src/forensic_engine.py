@@ -2441,6 +2441,139 @@ class ForensicEngine:
         
         return status
 
+    # -------------------------
+    # Enhanced LLM Analysis Methods
+    # -------------------------
+    def generate_formal_report(self, session_id: int) -> dict:
+        """
+        Generate a formal forensic analysis report for a honeypot session.
+        
+        Args:
+            session_id: ID of the session to analyze
+            
+        Returns:
+            Formal forensic report dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        session = self.get_honeypot_session(session_id)
+        if not session:
+            return {"error": "Session not found"}
+        
+        # Get existing threat analysis if available
+        threat_analysis = None
+        threat = self.db.query(ThreatAnalysis).filter_by(
+            source_type="session", source_id=session_id
+        ).first()
+        if threat:
+            threat_analysis = threat.dict()
+        
+        return self.llm_analyzer.generate_formal_report(session, threat_analysis)
+
+    def recommend_active_countermeasures(
+        self, session_id: int, capabilities: list = None
+    ) -> dict:
+        """
+        Get active countermeasure recommendations for a honeypot session.
+        
+        Args:
+            session_id: ID of the session to analyze
+            capabilities: Optional list of available Cowrie capabilities
+            
+        Returns:
+            Countermeasure recommendations dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        session = self.get_honeypot_session(session_id)
+        if not session:
+            return {"error": "Session not found"}
+        
+        # Get existing threat analysis if available
+        threat_analysis = None
+        threat = self.db.query(ThreatAnalysis).filter_by(
+            source_type="session", source_id=session_id
+        ).first()
+        if threat:
+            threat_analysis = threat.dict()
+        
+        return self.llm_analyzer.recommend_active_countermeasures(
+            session, threat_analysis, capabilities
+        )
+
+    def generate_output_plugin_code(
+        self, trigger_events: list, response_actions: list, conditions: dict = None
+    ) -> dict:
+        """
+        Generate Cowrie output plugin code for automated responses.
+        
+        Args:
+            trigger_events: List of Cowrie event IDs to trigger on
+            response_actions: List of actions to perform
+            conditions: Optional conditions for filtering events
+            
+        Returns:
+            Generated plugin code and configuration
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        return self.llm_analyzer.generate_output_plugin_code(
+            trigger_events, response_actions, conditions
+        )
+
+    def analyze_real_time_commands(
+        self, commands: list, context: dict = None
+    ) -> dict:
+        """
+        Perform real-time threat analysis on a stream of commands.
+        
+        Args:
+            commands: List of commands to analyze
+            context: Optional context dictionary
+            
+        Returns:
+            Real-time threat assessment dictionary
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        return self.llm_analyzer.analyze_real_time_commands(commands, context)
+
+    def generate_detection_rules(
+        self, session_id: int, rule_formats: list = None
+    ) -> dict:
+        """
+        Generate detection rules based on attack patterns from a session.
+        
+        Args:
+            session_id: ID of the session to base rules on
+            rule_formats: Optional list of rule formats to generate
+            
+        Returns:
+            Detection rules in various formats
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        session = self.get_honeypot_session(session_id)
+        if not session:
+            return {"error": "Session not found"}
+        
+        # Get existing threat analysis if available
+        threat_analysis = None
+        threat = self.db.query(ThreatAnalysis).filter_by(
+            source_type="session", source_id=session_id
+        ).first()
+        if threat:
+            threat_analysis = threat.dict()
+        
+        return self.llm_analyzer.generate_detection_rules(
+            session, threat_analysis, rule_formats
+        )
+
 
 if __name__ == "__main__":
     engine = ForensicEngine()
