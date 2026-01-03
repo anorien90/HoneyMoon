@@ -519,7 +519,8 @@ class TestNginxState:
         with patch.dict(os.environ, {
             "HONEY_AUTO_INGEST": "false",
             "NGINX_AUTO_INGEST": "false",
-            "HONEY_DATA_DIR": temp_dir
+            "HONEY_DATA_DIR": temp_dir,
+            "NGINX_STATE_PATH": os.path.join(temp_dir, ".nginx_access_state.json")
         }):
             from src.forensic_engine import ForensicEngine
             engine = ForensicEngine(
