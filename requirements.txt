@@ -6,3 +6,4 @@ whois
 scapy
 python-nmap
 maxminddb
+psutil

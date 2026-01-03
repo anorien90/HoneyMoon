@@ -23,7 +23,7 @@ except ImportError:
 from scapy.all import traceroute
 
 # package-relative import
-from .entry import Base, NetworkNode, AnalysisSession, PathHop, WebAccess, Organization
+from .entry import Base, NetworkNode, AnalysisSession, PathHop, WebAccess, Organization, ISP, OutgoingConnection
 
 # new honeypot models
 from .honeypot_models import HoneypotSession, HoneypotCommand, HoneypotFile, HoneypotNetworkFlow
@@ -42,6 +42,20 @@ try:
 except Exception:
     _HAS_BS4 = False
 
+# Optional: psutil for outgoing connection monitoring
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    psutil = None
+    _HAS_PSUTIL = False
+
+# Configure logging with thread name
+logging.basicConfig(
+    format='%(asctime)s [%(threadName)s] %(levelname)s: %(message)s',
+    level=logging.INFO
+)
+
 
 def _sha256_bytes(b: bytes) -> str:
     h = hashlib.sha256()
@@ -54,7 +68,8 @@ def _sha256_text(s: str) -> str:
 
 
 class ForensicEngine:
-    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True):
+    def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True, outgoing_monitor=False):
+        self.logger = logging.getLogger(__name__)
         self.nm = nmap.PortScanner()
         self.lookup_url = "http://api.hostip.info/get_html.php?ip={}"
         db_url = str(db_path)
@@ -76,7 +91,7 @@ class ForensicEngine:
                     conn.execute(text(f"PRAGMA busy_timeout={sqlite_timeout_ms}"))
                     conn.execute(text("PRAGMA journal_mode=WAL"))
             except SQLAlchemyError as e:
-                logging.warning(
+                self.logger.warning(
                     "SQLite PRAGMA setup failed (WAL/busy timeout disabled; concurrent ingestion may face lock errors): %s",
                     e,
                 )
@@ -96,7 +111,7 @@ class ForensicEngine:
         try:
             Base.metadata.create_all(self.engine)
         except Exception as e:
-            print(f"DB Error during create_all: {e}")
+            self.logger.error("DB Error during create_all: %s", e)
             raise
 
         self.Session = sessionmaker(bind=self.engine)
@@ -110,7 +125,7 @@ class ForensicEngine:
         if maxminddb:
             self._ensure_geolite_db()
         else:
-            print("maxminddb module not available; GeoLite lookups disabled.")
+            self.logger.info("maxminddb module not available; GeoLite lookups disabled.")
 
         # Automatic honeypot ingestion configuration
         honey_flag = os.environ.get("HONEY_AUTO_INGEST", honey_auto_ingest)
@@ -119,7 +134,7 @@ class ForensicEngine:
         else:
             self.honey_auto_ingest = str(honey_flag).lower() in ("1", "true", "yes", "on")
         self.honey_log_path = os.environ.get("HONEY_LOG_PATH", os.path.join(self.honeypot_data_dir, "log", "cowrie.json"))
-        print(f"Honeypot auto-ingest: {self.honey_auto_ingest}, log path: {self.honey_log_path}")
+        self.logger.info("Honeypot auto-ingest: %s, log path: %s", self.honey_auto_ingest, self.honey_log_path)
         try:
             self.honey_ingest_interval = int(os.environ.get("HONEY_INGEST_INTERVAL", "30"))
         except (TypeError, ValueError, OverflowError):
@@ -127,9 +142,9 @@ class ForensicEngine:
 
         if self.honey_auto_ingest and self.honey_log_path:
             # Start background watcher thread
-            t = threading.Thread(target=self._honeypot_watcher, args=(self.honey_log_path, self.honey_ingest_interval), daemon=True)
+            t = threading.Thread(target=self._honeypot_watcher, args=(self.honey_log_path, self.honey_ingest_interval), daemon=True, name="HoneypotWatcher")
             t.start()
-            print("Started honeypot watcher thread.")
+            self.logger.info("Started honeypot watcher thread (name=%s).", t.name)
 
         # Automatic nginx access log ingestion configuration
         access_flag = os.environ.get("NGINX_AUTO_INGEST", nginx_auto_ingest)
@@ -146,9 +161,30 @@ class ForensicEngine:
         self._nginx_state_path = os.path.abspath(os.environ.get("NGINX_STATE_PATH", os.path.join(os.path.dirname(self.access_log_path), ".nginx_access_state.json")))
 
         if self.access_auto_ingest and self.access_log_path:
-            t = threading.Thread(target=self._nginx_access_watcher, args=(self.access_log_path, self.access_ingest_interval), daemon=True)
+            t = threading.Thread(target=self._nginx_access_watcher, args=(self.access_log_path, self.access_ingest_interval), daemon=True, name="NginxAccessWatcher")
             t.start()
-            print(f"Started nginx access watcher for {self.access_log_path}")
+            self.logger.info("Started nginx access watcher (name=%s) for %s", t.name, self.access_log_path)
+
+        # Outgoing connection monitoring configuration
+        outgoing_flag = os.environ.get("OUTGOING_MONITOR", outgoing_monitor)
+        if isinstance(outgoing_flag, bool):
+            self.outgoing_monitor = outgoing_flag
+        else:
+            self.outgoing_monitor = str(outgoing_flag).lower() in ("1", "true", "yes", "on")
+        try:
+            self.outgoing_monitor_interval = int(os.environ.get("OUTGOING_MONITOR_INTERVAL", "30"))
+        except (TypeError, ValueError, OverflowError):
+            self.outgoing_monitor_interval = 30
+        self._outgoing_state_path = os.path.join(self.honeypot_data_dir, "outgoing_state.json")
+        self._outgoing_lock = threading.Lock()
+
+        if self.outgoing_monitor:
+            if _HAS_PSUTIL:
+                t = threading.Thread(target=self._outgoing_connection_watcher, args=(self.outgoing_monitor_interval,), daemon=True, name="OutgoingConnectionWatcher")
+                t.start()
+                self.logger.info("Started outgoing connection watcher thread (name=%s).", t.name)
+            else:
+                self.logger.warning("Outgoing connection monitoring requested but psutil not available. Install psutil to enable.")
 
     def _ensure_aware(self, dt):
         if not dt:
@@ -469,6 +505,56 @@ class ForensicEngine:
             org = session.query(Organization).filter_by(name_normalized=norm).first()
         return org
 
+    def get_or_create_isp(self, name, asn=None, session=None):
+        """
+        Get or create an ISP record by name.
+        - name: ISP name
+        - asn: Autonomous System Number (optional, e.g., "AS15169")
+        """
+        session = session or self.db
+        if not name:
+            return None
+        norm = name.strip().lower()
+        if not norm:
+            return None
+
+        isp = session.query(ISP).filter_by(name_normalized=norm).first()
+        if isp:
+            # Update ASN if provided and missing
+            if asn and not isp.asn:
+                isp.asn = asn
+                try:
+                    session.commit()
+                except Exception:
+                    session.rollback()
+            return isp
+
+        isp = ISP(name=name.strip(), name_normalized=norm, asn=asn, extra_data={})
+        session.add(isp)
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            isp = session.query(ISP).filter_by(name_normalized=norm).first()
+        return isp
+
+    def search_isps(self, query=None, fuzzy=False, limit=100):
+        """Search ISP records by name or ASN."""
+        q = (query or "").strip()
+        if not q:
+            rows = self.db.query(ISP).limit(limit).all()
+        else:
+            if fuzzy:
+                rows = self.db.query(ISP).filter(
+                    or_(ISP.name.ilike(f"%{q}%"), ISP.asn.ilike(f"%{q}%"))
+                ).limit(limit).all()
+            else:
+                norm = q.lower()
+                rows = self.db.query(ISP).filter(
+                    or_(ISP.name_normalized == norm, ISP.name == q, ISP.asn == q)
+                ).limit(limit).all()
+        return [r.dict() for r in rows]
+
     def refresh_organization(self, identifier, force=True):
         if not identifier:
             return None
@@ -594,11 +680,12 @@ class ForensicEngine:
                 try:
                     session.flush()
                 except IntegrityError:
-                    logging.warning("IntegrityError creating NetworkNode %s; attempting recovery", ip)
+                    self.logger.warning("IntegrityError creating NetworkNode %s; attempting recovery", ip)
                     node = self._recover_node_on_integrity_error(session, ip, seen_time=now)
                     if not node:
                         return None
 
+            # Handle Organization (separate from ISP)
             org_name = intel.get('organization') or (intel.get('rdap') or {}).get('org_full_name')
             if org_name:
                 org = self.get_or_create_organization(org_name, rdap=intel.get('rdap'), session=session)
@@ -606,9 +693,17 @@ class ForensicEngine:
                     node.organization_id = org.id
                     node.organization = org.name
 
+            # Handle ISP (separate table)
+            isp_name = (intel.get('geo') or {}).get('isp')
+            asn = (intel.get('geo') or {}).get('as')
+            if isp_name:
+                isp = self.get_or_create_isp(isp_name, asn=asn, session=session)
+                if isp:
+                    node.isp_id = isp.id
+                    node.isp = isp.name
+
             node.hostname = intel.get('hostname') or node.hostname
-            node.isp = (intel.get('geo') or {}).get('isp') or node.isp
-            node.asn = (intel.get('geo') or {}).get('as') or node.asn
+            node.asn = asn or node.asn
             node.country = (intel.get('geo') or {}).get('country') or node.country
             node.city = (intel.get('geo') or {}).get('city') or node.city
             node.latitude = (intel.get('geo') or {}).get('lat') or node.latitude
@@ -1063,22 +1158,30 @@ class ForensicEngine:
           - processed_hashes: list of recently processed event hashes (bounded)
         The watcher's DB work uses a fresh SQLAlchemy session per run to avoid cross-thread session issues.
         """
+        thread_name = threading.current_thread().name
+        self.logger.info("[%s] Starting honeypot watcher for file: %s (interval=%ds)", thread_name, filepath, interval)
+        
         try:
             state = self._load_honeypot_state()
             offset = int(state.get("offset", 0))
             processed_hashes = list(state.get("processed_hashes", []))
             processed_set = set(processed_hashes)
             MAX_HASH_HISTORY = 10000
-        except Exception:
+            self.logger.info("[%s] Loaded state: offset=%d, processed_hashes=%d", thread_name, offset, len(processed_hashes))
+        except Exception as e:
+            self.logger.warning("[%s] Failed to load state, starting fresh: %s", thread_name, e)
             offset = 0
             processed_set = set()
             processed_hashes = []
             MAX_HASH_HISTORY = 10000
 
+        events_processed = 0
         while True:
             try:
                 if not os.path.isfile(filepath):
                     # file missing: reset offset and sleep
+                    if offset > 0:
+                        self.logger.info("[%s] File not found, resetting offset: %s", thread_name, filepath)
                     offset = 0
                     time.sleep(interval)
                     continue
@@ -1086,6 +1189,7 @@ class ForensicEngine:
                 with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
                     fh.seek(offset)
                     new_lines = fh.readlines()
+                    new_count = 0
                     for line in new_lines:
                         line = line.strip()
                         offset = fh.tell()
@@ -1112,12 +1216,14 @@ class ForensicEngine:
                         try:
                             self._ingest_event(ev, session=db_sess, enrich=True)
                             db_sess.commit()
+                            new_count += 1
+                            events_processed += 1
                         except Exception as e:
                             try:
                                 db_sess.rollback()
                             except Exception:
                                 pass
-                            print(f"Honeypot watcher DB error: {e}\n{traceback.format_exc()}")
+                            self.logger.error("[%s] DB error processing event: %s\n%s", thread_name, e, traceback.format_exc())
                         finally:
                             db_sess.close()
 
@@ -1128,12 +1234,15 @@ class ForensicEngine:
                             processed_hashes = processed_hashes[-MAX_HASH_HISTORY:]
                             processed_set = set(processed_hashes)
 
+                    if new_count > 0:
+                        self.logger.info("[%s] Processed %d new honeypot events (total: %d)", thread_name, new_count, events_processed)
+
                 # persist state
                 state = {"offset": offset, "processed_hashes": processed_hashes}
                 self._save_honeypot_state(state)
             except Exception as e:
                 # Log and continue
-                print(f"Honeypot watcher encountered an error: {e}\n{traceback.format_exc()}")
+                self.logger.error("[%s] Watcher error: %s\n%s", thread_name, e, traceback.format_exc())
             # sleep then loop
             time.sleep(interval)
 
@@ -1142,27 +1251,36 @@ class ForensicEngine:
         Tail an nginx access log (JSON lines) and insert new WebAccess rows.
         Deduplicates by raw line hash and persists offset in a small state file.
         """
+        thread_name = threading.current_thread().name
+        self.logger.info("[%s] Starting nginx access watcher for file: %s (interval=%ds)", thread_name, filepath, interval)
+        
         try:
             state = self._load_nginx_state()
             offset = int(state.get("offset", 0))
             processed_hashes = list(state.get("processed_hashes", []))
             processed_set = set(processed_hashes)
             MAX_HASH_HISTORY = 10000
-        except Exception:
+            self.logger.info("[%s] Loaded state: offset=%d, processed_hashes=%d", thread_name, offset, len(processed_hashes))
+        except Exception as e:
+            self.logger.warning("[%s] Failed to load state, starting fresh: %s", thread_name, e)
             offset = 0
             processed_set = set()
             processed_hashes = []
             MAX_HASH_HISTORY = 10000
 
+        events_processed = 0
         while True:
             try:
                 if not os.path.isfile(filepath):
+                    if offset > 0:
+                        self.logger.info("[%s] File not found, resetting offset: %s", thread_name, filepath)
                     offset = 0
                     time.sleep(interval)
                     continue
 
                 with open(filepath, "r", encoding="utf-8", errors="replace") as fh:
                     fh.seek(offset)
+                    new_count = 0
                     while True:
                         line = fh.readline()
                         if not line:
@@ -1188,12 +1306,14 @@ class ForensicEngine:
                         try:
                             self._ingest_nginx_access_event(ev, session=db_sess, enrich=True)
                             db_sess.commit()
+                            new_count += 1
+                            events_processed += 1
                         except Exception as e:
                             try:
                                 db_sess.rollback()
                             except Exception:
                                 pass
-                            print(f"Nginx watcher DB error: {e}\n{traceback.format_exc()}")
+                            self.logger.error("[%s] DB error processing event: %s\n%s", thread_name, e, traceback.format_exc())
                         finally:
                             db_sess.close()
 
@@ -1203,11 +1323,187 @@ class ForensicEngine:
                             processed_hashes = processed_hashes[-MAX_HASH_HISTORY:]
                             processed_set = set(processed_hashes)
 
+                    if new_count > 0:
+                        self.logger.info("[%s] Processed %d new nginx access events (total: %d)", thread_name, new_count, events_processed)
+
                 state = {"offset": offset, "processed_hashes": processed_hashes}
                 self._save_nginx_state(state)
             except Exception as e:
-                print(f"Nginx watcher encountered an error: {e}\n{traceback.format_exc()}")
+                self.logger.error("[%s] Watcher error: %s\n%s", thread_name, e, traceback.format_exc())
             time.sleep(interval)
+
+    # -------------------------
+    # Outgoing connection watcher state helpers
+    # -------------------------
+    def _load_outgoing_state(self):
+        """Load state for outgoing connection tracking."""
+        try:
+            if os.path.isfile(self._outgoing_state_path):
+                with open(self._outgoing_state_path, "r", encoding="utf-8") as fh:
+                    st = json.load(fh)
+                    return {"seen_connections": set(tuple(x) for x in st.get("seen_connections", []))}
+        except Exception:
+            pass
+        return {"seen_connections": set()}
+
+    def _save_outgoing_state(self, state):
+        """Save state for outgoing connection tracking."""
+        try:
+            # Convert set of tuples to list of lists for JSON serialization
+            # Note: we take a random sample since set ordering is undefined
+            import random
+            seen_list = [list(x) for x in state.get("seen_connections", set())]
+            if len(seen_list) > 10000:
+                random.shuffle(seen_list)
+                seen_list = seen_list[:10000]
+            data = {"seen_connections": seen_list}
+            with open(self._outgoing_state_path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+        except Exception:
+            pass
+
+    def _outgoing_connection_watcher(self, interval=30):
+        """
+        Monitor outgoing network connections using psutil.
+        Records new outgoing connections in the OutgoingConnection table.
+        """
+        thread_name = threading.current_thread().name
+        self.logger.info("[%s] Starting outgoing connection watcher (interval=%ds)", thread_name, interval)
+        
+        if not _HAS_PSUTIL:
+            self.logger.error("[%s] psutil not available, cannot monitor outgoing connections", thread_name)
+            return
+        
+        try:
+            state = self._load_outgoing_state()
+            seen_connections = state.get("seen_connections", set())
+            self.logger.info("[%s] Loaded state: seen_connections=%d", thread_name, len(seen_connections))
+        except Exception as e:
+            self.logger.warning("[%s] Failed to load state, starting fresh: %s", thread_name, e)
+            seen_connections = set()
+
+        connections_logged = 0
+        while True:
+            try:
+                new_count = 0
+                now = datetime.now(timezone.utc)
+                
+                # Get all network connections
+                for conn in psutil.net_connections(kind='inet'):
+                    try:
+                        # Skip listening sockets and sockets without remote address
+                        if conn.status == 'LISTEN' or not conn.raddr:
+                            continue
+                        
+                        # Create a unique identifier for this connection
+                        local_addr = conn.laddr.ip if conn.laddr else None
+                        local_port = conn.laddr.port if conn.laddr else None
+                        remote_addr = conn.raddr.ip if conn.raddr else None
+                        remote_port = conn.raddr.port if conn.raddr else None
+                        
+                        # Determine connection type consistently
+                        conn_type_str = conn.type.name if hasattr(conn.type, 'name') else str(conn.type)
+                        conn_key = (local_addr, local_port, remote_addr, remote_port, conn_type_str)
+                        
+                        # Skip if we've already seen this connection
+                        if conn_key in seen_connections:
+                            continue
+                        
+                        # Determine if this is outgoing or internal
+                        # Using RFC 1918 private IP ranges
+                        direction = "outgoing"
+                        if remote_addr:
+                            # Check for RFC 1918 private addresses
+                            if remote_addr.startswith('10.') or remote_addr.startswith('192.168.'):
+                                direction = "internal"
+                            # 172.16.0.0/12 = 172.16.0.0 - 172.31.255.255
+                            elif remote_addr.startswith('172.'):
+                                try:
+                                    second_octet = int(remote_addr.split('.')[1])
+                                    if 16 <= second_octet <= 31:
+                                        direction = "internal"
+                                except (ValueError, IndexError):
+                                    pass
+                            # Also check for localhost
+                            elif remote_addr.startswith('127.') or remote_addr == '::1':
+                                direction = "internal"
+                        
+                        # Get process info if available
+                        pid = conn.pid
+                        process_name = None
+                        if pid:
+                            try:
+                                proc = psutil.Process(pid)
+                                process_name = proc.name()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                pass
+                        
+                        # Get protocol type using consistent logic
+                        proto = "tcp" if conn_type_str == 'SOCK_STREAM' else "udp" if conn_type_str == 'SOCK_DGRAM' else conn_type_str
+                        
+                        # Store the connection
+                        db_sess = self.Session()
+                        try:
+                            outgoing_conn = OutgoingConnection(
+                                timestamp=now,
+                                local_addr=local_addr,
+                                local_port=local_port,
+                                remote_addr=remote_addr,
+                                remote_port=remote_port,
+                                proto=proto,
+                                status=conn.status,
+                                pid=pid,
+                                process_name=process_name,
+                                direction=direction,
+                                extra_data={}
+                            )
+                            db_sess.add(outgoing_conn)
+                            db_sess.commit()
+                            new_count += 1
+                            connections_logged += 1
+                        except Exception as e:
+                            try:
+                                db_sess.rollback()
+                            except Exception:
+                                pass
+                            self.logger.error("[%s] DB error storing outgoing connection: %s", thread_name, e)
+                        finally:
+                            db_sess.close()
+                        
+                        # Mark as seen
+                        seen_connections.add(conn_key)
+                        
+                        # Limit the size of seen_connections using random eviction
+                        # (since we're storing in a set, order is not guaranteed)
+                        if len(seen_connections) > 50000:
+                            # Keep approximately 10000 random entries
+                            import random
+                            seen_list = list(seen_connections)
+                            random.shuffle(seen_list)
+                            seen_connections = set(seen_list[:10000])
+                    
+                    except Exception as conn_err:
+                        self.logger.debug("[%s] Error processing connection: %s", thread_name, conn_err)
+                        continue
+                
+                if new_count > 0:
+                    self.logger.info("[%s] Logged %d new outgoing connections (total: %d)", thread_name, new_count, connections_logged)
+                
+                # Save state
+                self._save_outgoing_state({"seen_connections": seen_connections})
+                
+            except Exception as e:
+                self.logger.error("[%s] Watcher error: %s\n%s", thread_name, e, traceback.format_exc())
+            
+            time.sleep(interval)
+
+    def get_outgoing_connections(self, limit=100, direction=None):
+        """Get recent outgoing connections, optionally filtered by direction."""
+        query = self.db.query(OutgoingConnection).order_by(OutgoingConnection.timestamp.desc())
+        if direction:
+            query = query.filter(OutgoingConnection.direction == direction)
+        rows = query.limit(limit).all()
+        return [r.dict() for r in rows]
 
     def ingest_pcap(self, pcap_path, filter_host=None):
         """

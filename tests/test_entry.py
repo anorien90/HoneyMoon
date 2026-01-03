@@ -4,7 +4,7 @@ Tests for src/entry.py SQLAlchemy models.
 import pytest
 from datetime import datetime, timezone
 
-from src.entry import Base, NetworkNode, Organization, AnalysisSession, PathHop, WebAccess
+from src.entry import Base, NetworkNode, Organization, AnalysisSession, PathHop, WebAccess, ISP, OutgoingConnection
 
 
 class TestOrganization:
@@ -263,3 +263,179 @@ class TestWebAccess:
         assert sample_web_access.node is not None
         assert sample_web_access.node.ip == sample_network_node.ip
         assert sample_web_access in sample_network_node.web_accesses
+
+
+class TestISP:
+    """Tests for the ISP model."""
+
+    def test_isp_creation(self, db_session):
+        """Test creating an ISP."""
+        isp = ISP(
+            name="Test ISP",
+            name_normalized="test isp",
+            asn="AS12345",
+            abuse_email="abuse@testisp.net",
+            extra_data={}
+        )
+        db_session.add(isp)
+        db_session.commit()
+        
+        assert isp.id is not None
+        assert isp.name == "Test ISP"
+        assert isp.name_normalized == "test isp"
+        assert isp.asn == "AS12345"
+        assert isp.abuse_email == "abuse@testisp.net"
+        assert isp.created_at is not None
+
+    def test_isp_dict(self, sample_isp):
+        """Test the ISP.dict() method."""
+        isp_dict = sample_isp.dict()
+        
+        assert isp_dict["id"] == sample_isp.id
+        assert isp_dict["name"] == "Test ISP Provider"
+        assert isp_dict["name_normalized"] == "test isp provider"
+        assert isp_dict["asn"] == "AS12345"
+        assert isp_dict["abuse_email"] == "abuse@testisp.net"
+        assert "created_at" in isp_dict
+        assert isp_dict["extra_data"] == {"note": "test isp"}
+
+    def test_isp_repr(self, sample_isp):
+        """Test the ISP.__repr__() method."""
+        repr_str = repr(sample_isp)
+        assert "ISP" in repr_str
+        assert str(sample_isp.id) in repr_str
+        assert "Test ISP Provider" in repr_str
+
+    def test_isp_name_normalized_unique(self, db_session):
+        """Test that name_normalized must be unique."""
+        isp1 = ISP(name="ISP 1", name_normalized="same isp")
+        db_session.add(isp1)
+        db_session.commit()
+
+        isp2 = ISP(name="ISP 2", name_normalized="same isp")
+        db_session.add(isp2)
+        
+        with pytest.raises(Exception):  # IntegrityError
+            db_session.commit()
+
+
+class TestNetworkNodeWithISP:
+    """Tests for NetworkNode with ISP relationship."""
+
+    def test_network_node_with_isp_relationship(self, db_session, sample_isp):
+        """Test the relationship between NetworkNode and ISP."""
+        node = NetworkNode(
+            ip="10.0.0.5",
+            isp="Test ISP Provider",
+            isp_id=sample_isp.id
+        )
+        db_session.add(node)
+        db_session.commit()
+        db_session.refresh(node)
+        
+        assert node.isp_obj is not None
+        assert node.isp_obj.id == sample_isp.id
+        assert node in sample_isp.nodes
+
+    def test_network_node_dict_includes_isp(self, db_session, sample_isp):
+        """Test that NetworkNode.dict() includes ISP information."""
+        node = NetworkNode(
+            ip="10.0.0.6",
+            isp="Test ISP Provider",
+            isp_id=sample_isp.id
+        )
+        db_session.add(node)
+        db_session.commit()
+        db_session.refresh(node)
+        
+        node_dict = node.dict()
+        
+        assert node_dict["isp"] == "Test ISP Provider"
+        assert node_dict["isp_id"] == sample_isp.id
+        assert node_dict["isp_obj"] is not None
+        assert node_dict["isp_obj"]["name"] == "Test ISP Provider"
+
+
+class TestOutgoingConnection:
+    """Tests for the OutgoingConnection model."""
+
+    def test_outgoing_connection_creation(self, db_session):
+        """Test creating an outgoing connection."""
+        conn = OutgoingConnection(
+            local_addr="192.168.1.100",
+            local_port=54321,
+            remote_addr="8.8.8.8",
+            remote_port=443,
+            proto="tcp",
+            status="ESTABLISHED",
+            pid=1234,
+            process_name="curl",
+            direction="outgoing"
+        )
+        db_session.add(conn)
+        db_session.commit()
+        
+        assert conn.id is not None
+        assert conn.local_addr == "192.168.1.100"
+        assert conn.local_port == 54321
+        assert conn.remote_addr == "8.8.8.8"
+        assert conn.remote_port == 443
+        assert conn.proto == "tcp"
+        assert conn.status == "ESTABLISHED"
+        assert conn.pid == 1234
+        assert conn.process_name == "curl"
+        assert conn.direction == "outgoing"
+        assert conn.timestamp is not None
+
+    def test_outgoing_connection_dict(self, sample_outgoing_connection):
+        """Test the OutgoingConnection.dict() method."""
+        conn_dict = sample_outgoing_connection.dict()
+        
+        assert conn_dict["id"] == sample_outgoing_connection.id
+        assert conn_dict["local_addr"] == "192.168.1.100"
+        assert conn_dict["local_port"] == 54321
+        assert conn_dict["remote_addr"] == "8.8.8.8"
+        assert conn_dict["remote_port"] == 443
+        assert conn_dict["proto"] == "tcp"
+        assert conn_dict["status"] == "ESTABLISHED"
+        assert conn_dict["pid"] == 1234
+        assert conn_dict["process_name"] == "python3"
+        assert conn_dict["direction"] == "outgoing"
+        assert "timestamp" in conn_dict
+
+    def test_outgoing_connection_repr(self, sample_outgoing_connection):
+        """Test the OutgoingConnection.__repr__() method."""
+        repr_str = repr(sample_outgoing_connection)
+        assert "OutgoingConnection" in repr_str
+        assert "192.168.1.100" in repr_str
+        assert "8.8.8.8" in repr_str
+
+    def test_outgoing_connection_internal_direction(self, db_session):
+        """Test creating an internal connection."""
+        conn = OutgoingConnection(
+            local_addr="192.168.1.100",
+            local_port=54321,
+            remote_addr="192.168.1.1",
+            remote_port=80,
+            proto="tcp",
+            direction="internal"
+        )
+        db_session.add(conn)
+        db_session.commit()
+        
+        assert conn.direction == "internal"
+
+    def test_outgoing_connection_nullable_fields(self, db_session):
+        """Test that optional fields can be null."""
+        conn = OutgoingConnection(
+            remote_addr="8.8.8.8",
+            remote_port=443,
+            proto="tcp"
+        )
+        db_session.add(conn)
+        db_session.commit()
+        
+        assert conn.local_addr is None
+        assert conn.local_port is None
+        assert conn.pid is None
+        assert conn.process_name is None

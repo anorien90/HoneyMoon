@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.entry import Base, NetworkNode, Organization, AnalysisSession, PathHop, WebAccess
+from src.entry import Base, NetworkNode, Organization, AnalysisSession, PathHop, WebAccess, ISP, OutgoingConnection
 from src.honeypot_models import HoneypotSession, HoneypotCommand, HoneypotFile, HoneypotNetworkFlow
 
 
@@ -189,6 +189,42 @@ def sample_network_flow(db_session):
 
 
 @pytest.fixture
+def sample_isp(db_session):
+    """Create a sample ISP for testing."""
+    isp = ISP(
+        name="Test ISP Provider",
+        name_normalized="test isp provider",
+        asn="AS12345",
+        abuse_email="abuse@testisp.net",
+        extra_data={"note": "test isp"}
+    )
+    db_session.add(isp)
+    db_session.commit()
+    return isp
+
+
+@pytest.fixture
+def sample_outgoing_connection(db_session):
+    """Create a sample outgoing connection for testing."""
+    conn = OutgoingConnection(
+        timestamp=datetime.now(timezone.utc),
+        local_addr="192.168.1.100",
+        local_port=54321,
+        remote_addr="8.8.8.8",
+        remote_port=443,
+        proto="tcp",
+        status="ESTABLISHED",
+        pid=1234,
+        process_name="python3",
+        direction="outgoing",
+        extra_data={}
+    )
+    db_session.add(conn)
+    db_session.commit()
+    return conn
+
+
+@pytest.fixture
 def temp_dir():
     """Create a temporary directory for test files."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -206,6 +242,7 @@ def flask_test_client(temp_dir):
     os.environ["IPMAP_STATIC"] = os.path.join(os.path.dirname(__file__), "..", "static")
     os.environ["HONEY_AUTO_INGEST"] = "false"
     os.environ["NGINX_AUTO_INGEST"] = "false"
+    os.environ["OUTGOING_MONITOR"] = "false"
     os.environ["HONEY_DATA_DIR"] = temp_dir
     
     # Import app after setting environment variables
