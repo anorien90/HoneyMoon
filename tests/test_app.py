@@ -429,3 +429,66 @@ class TestDbNodeEndpoint:
         response = client.get('/api/v1/db/node?ip=1.2.3.4')
         
         assert response.status_code == 404
+
+
+class TestLiveConnectionsEndpoint:
+    """Tests for the /api/v1/live/connections endpoint."""
+
+    def test_live_connections_default_params(self, app_client):
+        """Test live connections with default parameters."""
+        client, mock_engine = app_client
+        # Mock the db.query to return empty lists
+        mock_engine.db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        
+        response = client.get('/api/v1/live/connections')
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert "minutes" in data
+        assert data["minutes"] == 15  # default value
+        assert "sessions" in data
+        assert "flows" in data
+        assert "cutoff" in data
+
+    def test_live_connections_custom_minutes(self, app_client):
+        """Test live connections with custom time window."""
+        client, mock_engine = app_client
+        mock_engine.db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        
+        response = client.get('/api/v1/live/connections?minutes=30')
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["minutes"] == 30
+
+    def test_live_connections_max_minutes(self, app_client):
+        """Test live connections clamps minutes to max value."""
+        client, mock_engine = app_client
+        mock_engine.db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        
+        response = client.get('/api/v1/live/connections?minutes=9999')
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["minutes"] == 1440  # max value
+
+    def test_live_connections_min_minutes(self, app_client):
+        """Test live connections clamps minutes to min value."""
+        client, mock_engine = app_client
+        mock_engine.db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        
+        response = client.get('/api/v1/live/connections?minutes=0')
+        
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["minutes"] == 1  # min value
+
+    def test_live_connections_custom_limit(self, app_client):
+        """Test live connections with custom limit."""
+        client, mock_engine = app_client
+        mock_engine.db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        
+        response = client.get('/api/v1/live/connections?limit=50')
+        
+        assert response.status_code == 200
+        # Verify limit was passed (indirectly via successful response)

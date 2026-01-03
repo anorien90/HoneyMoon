@@ -227,6 +227,120 @@ def honeypot_flows():
         return jsonify({"flows": [r.dict() for r in rows]}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to list flows: {e}"}), 500
+
+
+@app.route('/api/v1/live/connections')
+def live_connections():
+    """
+    Get recent connections (honeypot sessions and network flows) from the last X minutes.
+    Query params:
+      - minutes: time window in minutes (default: 15, max: 1440)
+      - limit: max results per category (default: 100)
+    Returns:
+      - sessions: recent honeypot sessions with geolocation data
+      - flows: recent network flows with geolocation data
+      - honeypot_location: the honeypot's location (if known)
+    """
+    from datetime import datetime, timezone, timedelta
+
+    try:
+        minutes = int(request.args.get('minutes', 15))
+        minutes = max(1, min(1440, minutes))  # 1 minute to 24 hours
+    except Exception:
+        minutes = 15
+
+    try:
+        limit = int(request.args.get('limit', 100))
+        limit = max(1, min(500, limit))
+    except Exception:
+        limit = 100
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    result = {
+        "minutes": minutes,
+        "cutoff": cutoff.isoformat(),
+        "sessions": [],
+        "flows": [],
+        "honeypot_location": None
+    }
+
+    # Try to determine the honeypot's location from config or first local IP
+    honeypot_ip = os.environ.get("HONEYPOT_IP", None)
+    if honeypot_ip:
+        hp_node = engine.get_entry(honeypot_ip)
+        if hp_node and hp_node.get("latitude") and hp_node.get("longitude"):
+            result["honeypot_location"] = {
+                "ip": honeypot_ip,
+                "latitude": hp_node.get("latitude"),
+                "longitude": hp_node.get("longitude"),
+                "city": hp_node.get("city"),
+                "country": hp_node.get("country")
+            }
+
+    # Get recent honeypot sessions
+    if HoneypotSession is not None:
+        try:
+            rows = engine.db.query(HoneypotSession).filter(
+                HoneypotSession.start_ts >= cutoff
+            ).order_by(HoneypotSession.start_ts.desc()).limit(limit).all()
+
+            for session in rows:
+                session_dict = session.dict()
+                # Enrich with geolocation from network node
+                src_ip = session.src_ip
+                if src_ip:
+                    node = engine.get_entry(src_ip)
+                    if node:
+                        session_dict["node"] = {
+                            "ip": node.get("ip"),
+                            "latitude": node.get("latitude"),
+                            "longitude": node.get("longitude"),
+                            "city": node.get("city"),
+                            "country": node.get("country"),
+                            "organization": node.get("organization")
+                        }
+                result["sessions"].append(session_dict)
+        except Exception as e:
+            result["sessions_error"] = str(e)
+
+    # Get recent network flows
+    if HoneypotNetworkFlow is not None:
+        try:
+            rows = engine.db.query(HoneypotNetworkFlow).filter(
+                HoneypotNetworkFlow.start_ts >= cutoff
+            ).order_by(HoneypotNetworkFlow.start_ts.desc()).limit(limit).all()
+
+            for flow in rows:
+                flow_dict = flow.dict()
+                # Enrich src_ip with geolocation
+                if flow.src_ip:
+                    src_node = engine.get_entry(flow.src_ip)
+                    if src_node:
+                        flow_dict["src_node"] = {
+                            "ip": src_node.get("ip"),
+                            "latitude": src_node.get("latitude"),
+                            "longitude": src_node.get("longitude"),
+                            "city": src_node.get("city"),
+                            "country": src_node.get("country"),
+                            "organization": src_node.get("organization")
+                        }
+                # Enrich dst_ip with geolocation
+                if flow.dst_ip:
+                    dst_node = engine.get_entry(flow.dst_ip)
+                    if dst_node:
+                        flow_dict["dst_node"] = {
+                            "ip": dst_node.get("ip"),
+                            "latitude": dst_node.get("latitude"),
+                            "longitude": dst_node.get("longitude"),
+                            "city": dst_node.get("city"),
+                            "country": dst_node.get("country"),
+                            "organization": dst_node.get("organization")
+                        }
+                result["flows"].append(flow_dict)
+        except Exception as e:
+            result["flows_error"] = str(e)
+
+    return jsonify(result), 200
 # ---------------------------------------------------------------------------
 
 
