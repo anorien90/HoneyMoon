@@ -3,12 +3,18 @@ LLM-based analysis module for HoneyMoon using local Granite models via Ollama.
 
 Provides threat analysis, log examination, and counter-measure planning capabilities
 for honeypot sessions, connections, and web access logs.
+
+Enhanced with:
+- Formal forensic report generation
+- Active countermeasure planning (Cowrie integration)
+- Real-time session hooking recommendations
 """
 import os
 import json
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
+from enum import Enum
 
 # Optional imports for LLM functionality
 try:
@@ -19,6 +25,27 @@ except ImportError:
     _HAS_OLLAMA = False
 
 logger = logging.getLogger(__name__)
+
+
+class CountermeasureType(Enum):
+    """Types of active countermeasures available via Cowrie honeypot integration."""
+    JSON_TAIL = "json_tail"  # Real-time command monitoring via JSON log
+    MANHOLE = "manhole"  # Direct Python REPL access to Cowrie internals
+    OUTPUT_PLUGIN = "output_plugin"  # Custom output plugin for automated responses
+    PROXY_MODE = "proxy_mode"  # High-interaction proxy to real backend
+    PLAYLOG = "playlog"  # Terminal replay for session analysis
+
+
+class ResponseAction(Enum):
+    """Types of responses that can be executed against attackers."""
+    OBSERVE = "observe"  # Passive observation only
+    DELAY = "delay"  # Introduce delays to slow attacker
+    FAKE_DATA = "fake_data"  # Feed fake credentials/data
+    TARPIT = "tarpit"  # Engage tarpit to waste attacker time
+    DISCONNECT = "disconnect"  # Force session termination
+    ALERT = "alert"  # Send immediate alert to security team
+    CAPTURE = "capture"  # Enhanced artifact capture
+    DECEPTION = "deception"  # Deploy deceptive resources
 
 
 class LLMAnalyzer:
@@ -683,4 +710,535 @@ Provide your analysis as a JSON object with these fields:
             "available": self.is_available(),
             "ollama_host": self.ollama_host,
             "supported_models": self.SUPPORTED_MODELS
+        }
+    
+    def generate_formal_report(self, session: Dict[str, Any], threat_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Generate a formal forensic analysis report for a honeypot session.
+        
+        This produces a detailed, formal-format report suitable for:
+        - Incident documentation
+        - Legal proceedings
+        - Compliance reporting
+        - Security team briefings
+        
+        Args:
+            session: Session data dictionary with commands, files, etc.
+            threat_analysis: Optional existing threat analysis to include
+            
+        Returns:
+            Formal analysis report with structured sections
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "generated": False}
+        
+        # Build comprehensive context
+        context_parts = []
+        
+        # Session identification
+        context_parts.append("## SESSION IDENTIFICATION")
+        context_parts.append(f"Session ID: {session.get('id', 'unknown')}")
+        context_parts.append(f"Cowrie Session: {session.get('cowrie_session', 'N/A')}")
+        context_parts.append(f"Source IP Address: {session.get('src_ip', 'unknown')}")
+        context_parts.append(f"Source Port: {session.get('src_port', 'unknown')}")
+        context_parts.append(f"Session Start: {session.get('start_ts', 'unknown')}")
+        context_parts.append(f"Session End: {session.get('end_ts', 'ongoing')}")
+        
+        # Authentication details
+        context_parts.append("\n## AUTHENTICATION ATTEMPT")
+        context_parts.append(f"Username Attempted: {session.get('username', 'none')}")
+        context_parts.append(f"Authentication Result: {session.get('auth_success', 'unknown')}")
+        
+        # Command analysis
+        commands = session.get('commands', [])
+        if commands:
+            cmd_list = [c.get('command', '') for c in commands if c.get('command')]
+            context_parts.append(f"\n## COMMAND EXECUTION LOG ({len(cmd_list)} commands)")
+            for i, cmd in enumerate(cmd_list[:100], 1):
+                context_parts.append(f"{i:3d}. {cmd}")
+        
+        # File analysis
+        files = session.get('files', [])
+        if files:
+            context_parts.append(f"\n## FILE ACTIVITY ({len(files)} files)")
+            for f in files[:30]:
+                context_parts.append(f"  - {f.get('filename', 'unknown')} [{f.get('direction', 'unknown')}]")
+                if f.get('sha256'):
+                    context_parts.append(f"    SHA256: {f['sha256']}")
+        
+        # Attacker metadata
+        extra = session.get('extra', {})
+        if extra.get('node_cached'):
+            node = extra['node_cached']
+            context_parts.append("\n## ATTACKER ATTRIBUTION DATA")
+            if node.get('organization'):
+                context_parts.append(f"Organization: {node['organization']}")
+            if node.get('country'):
+                context_parts.append(f"Country: {node['country']}")
+            if node.get('asn'):
+                context_parts.append(f"ASN: {node['asn']}")
+            if node.get('isp'):
+                context_parts.append(f"ISP: {node['isp']}")
+        
+        # Include existing threat analysis if available
+        if threat_analysis:
+            context_parts.append("\n## PRIOR THREAT ASSESSMENT")
+            context_parts.append(f"Threat Type: {threat_analysis.get('threat_type', 'unknown')}")
+            context_parts.append(f"Severity: {threat_analysis.get('severity', 'unknown')}")
+            context_parts.append(f"Confidence: {threat_analysis.get('confidence', 'unknown')}")
+        
+        context = "\n".join(context_parts)
+        
+        system_prompt = """You are a senior cybersecurity forensic analyst preparing formal incident documentation.
+Generate a comprehensive, formal forensic analysis report following industry standards.
+The report must be suitable for legal proceedings, compliance audits, and executive briefings.
+Use formal language, proper structure, and cite evidence from the provided data."""
+        
+        prompt = f"""Generate a formal forensic analysis report for this honeypot intrusion incident.
+
+INCIDENT DATA:
+{context}
+
+Generate a formal report with these MANDATORY sections (use headers with "###"):
+
+### 1. EXECUTIVE SUMMARY
+- Brief overview (2-3 paragraphs)
+- Critical findings
+- Immediate risk assessment
+
+### 2. INCIDENT CLASSIFICATION
+- Incident Type: (e.g., Unauthorized Access Attempt, Malware Deployment, Reconnaissance)
+- Severity Level: (Critical/High/Medium/Low) with justification
+- MITRE ATT&CK Framework Mapping:
+  - Tactics observed
+  - Techniques identified (with T-codes where applicable)
+
+### 3. TECHNICAL ANALYSIS
+- Attack Vector Analysis
+- Command Sequence Analysis (explain attacker objectives)
+- Malicious Payload Analysis (if applicable)
+- Network Behavior Analysis
+
+### 4. THREAT ACTOR ASSESSMENT
+- Skill Level: (Script Kiddie/Intermediate/Advanced/APT)
+- Automation Assessment: (Likely automated/Manual/Hybrid)
+- Attribution Indicators
+- Motivation Assessment
+
+### 5. INDICATORS OF COMPROMISE (IOCs)
+- Network IOCs (IPs, domains, ports)
+- Host IOCs (files, hashes, paths)
+- Behavioral IOCs (command patterns, timing)
+
+### 6. IMPACT ASSESSMENT
+- Potential Impact if Attack Succeeded
+- Data at Risk
+- System Integrity Concerns
+
+### 7. RECOMMENDATIONS
+- Immediate Actions (within 1 hour)
+- Short-term Actions (within 24 hours)
+- Long-term Improvements
+- Detection Rule Suggestions
+
+### 8. EVIDENCE CHAIN
+- List of artifacts preserved
+- Evidence integrity notes
+
+Respond with a JSON object containing:
+- report_sections: object with each section as a key and content as value
+- severity: string
+- confidence: float (0.0-1.0)
+- summary: string (one paragraph executive summary)
+- mitre_tactics: list of MITRE ATT&CK tactics
+- mitre_techniques: list of MITRE ATT&CK techniques (with T-codes)
+- iocs: object with network_iocs, host_iocs, behavioral_iocs lists
+- recommended_actions: list of prioritized actions
+- threat_actor_profile: object with skill_level, automation, motivation"""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["generated"] = True
+            result["generated_at"] = datetime.now(timezone.utc).isoformat()
+            result["session_id"] = session.get('id')
+            result["format"] = "formal_forensic_report"
+            return result
+        
+        # Fallback if JSON parsing failed
+        return {
+            "generated": True,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "session_id": session.get('id'),
+            "format": "formal_forensic_report",
+            "raw_report": response,
+            "parse_error": True
+        }
+    
+    def recommend_active_countermeasures(
+        self,
+        session: Dict[str, Any],
+        threat_analysis: Optional[Dict[str, Any]] = None,
+        available_capabilities: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate recommendations for active countermeasures against an ongoing attack.
+        
+        Based on Cowrie honeypot capabilities:
+        - JSON Tail: Real-time command monitoring
+        - Manhole: Direct Python access to session objects
+        - Output Plugins: Automated response triggers
+        - Proxy Mode: Pass-through to real backend for deeper analysis
+        
+        Args:
+            session: Session data dictionary
+            threat_analysis: Optional existing threat analysis
+            available_capabilities: List of available countermeasure capabilities
+            
+        Returns:
+            Countermeasure recommendations with priority and implementation details
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "recommended": False}
+        
+        # Default capabilities if not specified
+        if available_capabilities is None:
+            available_capabilities = [
+                CountermeasureType.JSON_TAIL.value,
+                CountermeasureType.MANHOLE.value,
+                CountermeasureType.OUTPUT_PLUGIN.value,
+                CountermeasureType.PROXY_MODE.value,
+                CountermeasureType.PLAYLOG.value
+            ]
+        
+        # Build context
+        context_parts = []
+        context_parts.append(f"Source IP: {session.get('src_ip', 'unknown')}")
+        context_parts.append(f"Current Status: {'active' if not session.get('end_ts') else 'closed'}")
+        context_parts.append(f"Username: {session.get('username', 'none')}")
+        
+        commands = session.get('commands', [])
+        if commands:
+            cmd_list = [c.get('command', '') for c in commands if c.get('command')]
+            context_parts.append(f"Commands executed: {len(cmd_list)}")
+            context_parts.append(f"Recent commands: {'; '.join(cmd_list[-10:])}")
+        
+        files = session.get('files', [])
+        if files:
+            context_parts.append(f"Files involved: {len(files)}")
+            context_parts.append(f"File names: {', '.join([f.get('filename', '') for f in files[:5]])}")
+        
+        if threat_analysis:
+            context_parts.append(f"Threat Type: {threat_analysis.get('threat_type', 'unknown')}")
+            context_parts.append(f"Severity: {threat_analysis.get('severity', 'unknown')}")
+        
+        context_parts.append(f"\nAvailable Cowrie Capabilities: {', '.join(available_capabilities)}")
+        
+        context = "\n".join(context_parts)
+        
+        system_prompt = """You are a cybersecurity incident responder with expertise in honeypot operations.
+You have access to Cowrie honeypot active countermeasure capabilities.
+Recommend specific actions based on the observed attack and available tools."""
+        
+        prompt = f"""Based on this active honeypot session, recommend active countermeasures.
+
+SESSION CONTEXT:
+{context}
+
+AVAILABLE COWRIE COUNTERMEASURE CAPABILITIES:
+1. json_tail - Real-time JSON log monitoring (tail -f cowrie.json | jq)
+   - Use for: Observing commands as they happen
+   - Actions: Alert on specific commands, pattern matching
+
+2. manhole - SSH access to Python REPL inside Cowrie
+   - Use for: Direct session inspection, injecting responses
+   - Actions: Read session objects, write to attacker's terminal
+   - Example: session.transport.write(b'fake_data')
+
+3. output_plugin - Custom Python plugin for automated responses
+   - Use for: Triggering scripts on specific events
+   - Actions: Run local commands, send webhooks, SIEM integration
+
+4. proxy_mode - Pass attacker to real backend VM/container
+   - Use for: Deep analysis of attacker behavior on real system
+   - Actions: tmux attach, tcpdump, full system monitoring
+
+5. playlog - Terminal session replay
+   - Use for: Post-incident analysis, training
+   - Actions: Watch exactly what attacker saw
+
+RESPONSE ACTIONS AVAILABLE:
+- observe: Passive monitoring only
+- delay: Introduce latency to slow attacker
+- fake_data: Feed deceptive credentials/data
+- tarpit: Engage tarpit mechanism
+- disconnect: Force terminate session
+- alert: Immediate security team notification
+- capture: Enhanced artifact collection
+- deception: Deploy honeytokens or fake resources
+
+Provide your recommendations as a JSON object:
+- recommended_capability: string (primary capability to use)
+- priority: string (immediate/high/medium/low)
+- response_actions: list of recommended ResponseAction values
+- implementation_steps: list of specific steps to implement
+- manhole_commands: list of Python commands if manhole recommended
+- output_plugin_config: object with event triggers and actions if plugin recommended
+- monitoring_queries: list of jq queries for json_tail if recommended
+- risk_assessment: string describing risks of each action
+- timing: string (when to execute - immediately, on_next_command, on_file_download, etc.)
+- expected_outcome: string describing what to expect
+- rollback_plan: string describing how to revert if needed"""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["recommended"] = True
+            result["recommended_at"] = datetime.now(timezone.utc).isoformat()
+            result["session_id"] = session.get('id')
+            return result
+        
+        return {
+            "recommended": True,
+            "recommended_at": datetime.now(timezone.utc).isoformat(),
+            "session_id": session.get('id'),
+            "raw_recommendations": response,
+            "parse_error": True
+        }
+    
+    def generate_output_plugin_code(
+        self,
+        trigger_events: List[str],
+        response_actions: List[str],
+        conditions: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate Python code for a Cowrie output plugin based on specified triggers.
+        
+        Args:
+            trigger_events: List of Cowrie event IDs to trigger on
+                (e.g., 'cowrie.command.input', 'cowrie.session.file_download')
+            response_actions: List of actions to perform
+            conditions: Optional conditions for filtering events
+            
+        Returns:
+            Generated Python code and configuration for Cowrie output plugin
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "generated": False}
+        
+        system_prompt = """You are an expert Python developer specializing in Cowrie honeypot customization.
+Generate production-ready Python code for Cowrie output plugins.
+Follow Cowrie's plugin architecture and best practices."""
+        
+        prompt = f"""Generate a Cowrie output plugin with the following specifications:
+
+TRIGGER EVENTS:
+{json.dumps(trigger_events, indent=2)}
+
+RESPONSE ACTIONS:
+{json.dumps(response_actions, indent=2)}
+
+CONDITIONS (optional filters):
+{json.dumps(conditions or {}, indent=2)}
+
+COWRIE OUTPUT PLUGIN STRUCTURE:
+- Located in: src/cowrie/output/
+- Inherits from: cowrie.core.output.Output
+- Main methods: start(), stop(), write(entry)
+- Event filtering: Check entry.get('eventid')
+
+COMMON EVENT IDs:
+- cowrie.session.connect: New connection
+- cowrie.login.success: Successful authentication
+- cowrie.login.failed: Failed authentication
+- cowrie.command.input: Command entered by attacker
+- cowrie.command.failed: Unknown command
+- cowrie.session.file_download: File downloaded
+- cowrie.session.file_upload: File uploaded
+- cowrie.session.closed: Session ended
+
+Generate a JSON response with:
+- plugin_code: string (complete Python code for the plugin)
+- config_snippet: string (cowrie.cfg section to enable plugin)
+- installation_steps: list of steps to install and activate
+- testing_steps: list of steps to test the plugin
+- safety_notes: list of security considerations"""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["generated"] = True
+            result["generated_at"] = datetime.now(timezone.utc).isoformat()
+            return result
+        
+        return {
+            "generated": True,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "raw_response": response,
+            "parse_error": True
+        }
+    
+    def analyze_real_time_commands(
+        self,
+        commands: List[str],
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze a stream of commands in real-time for threat detection.
+        
+        Designed to be called repeatedly as new commands arrive for
+        continuous threat assessment during an active session.
+        
+        Args:
+            commands: List of commands to analyze (newest last)
+            context: Optional context (previous analysis, session info)
+            
+        Returns:
+            Real-time threat assessment with urgency level
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "analyzed": False}
+        
+        # Build context
+        context_parts = []
+        context_parts.append(f"Command count: {len(commands)}")
+        context_parts.append(f"Commands (newest last):")
+        for i, cmd in enumerate(commands[-20:], 1):  # Last 20 commands
+            context_parts.append(f"  {i}. {cmd}")
+        
+        if context:
+            if context.get('session_ip'):
+                context_parts.append(f"Attacker IP: {context['session_ip']}")
+            if context.get('previous_threat_level'):
+                context_parts.append(f"Previous threat level: {context['previous_threat_level']}")
+        
+        command_context = "\n".join(context_parts)
+        
+        system_prompt = """You are a real-time threat detection system monitoring honeypot activity.
+Analyze commands quickly and provide immediate threat assessment.
+Focus on identifying escalation patterns, data exfiltration, or destructive actions."""
+        
+        prompt = f"""Perform real-time threat analysis on these commands:
+
+{command_context}
+
+Provide IMMEDIATE assessment as JSON:
+- urgency: string (critical/high/medium/low/info)
+- threat_detected: boolean
+- threat_type: string (if detected)
+- escalation_pattern: boolean (is attacker escalating?)
+- data_exfiltration_risk: boolean
+- destructive_intent: boolean
+- recommended_action: string (observe/alert/intervene/disconnect)
+- key_indicators: list of concerning command patterns
+- next_likely_actions: list of predicted attacker actions
+- confidence: float (0.0-1.0)
+- brief_summary: string (one sentence)"""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["analyzed"] = True
+            result["analyzed_at"] = datetime.now(timezone.utc).isoformat()
+            result["command_count"] = len(commands)
+            return result
+        
+        return {
+            "analyzed": True,
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
+            "command_count": len(commands),
+            "urgency": "medium",
+            "threat_detected": False,
+            "raw_response": response,
+            "parse_error": True
+        }
+    
+    def generate_detection_rules(
+        self,
+        session: Dict[str, Any],
+        threat_analysis: Optional[Dict[str, Any]] = None,
+        rule_formats: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate detection rules based on observed attack patterns.
+        
+        Args:
+            session: Session data to base rules on
+            threat_analysis: Optional threat analysis for context
+            rule_formats: List of rule formats to generate
+                         (e.g., 'yara', 'sigma', 'snort', 'suricata', 'firewall')
+            
+        Returns:
+            Detection rules in various formats
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "generated": False}
+        
+        if rule_formats is None:
+            rule_formats = ['sigma', 'firewall', 'cowrie_filter']
+        
+        # Build context
+        context_parts = []
+        context_parts.append(f"Source IP: {session.get('src_ip', 'unknown')}")
+        
+        commands = session.get('commands', [])
+        if commands:
+            cmd_list = [c.get('command', '') for c in commands if c.get('command')]
+            context_parts.append(f"Commands: {'; '.join(cmd_list[:30])}")
+        
+        files = session.get('files', [])
+        if files:
+            context_parts.append(f"Files: {', '.join([f.get('filename', '') for f in files])}")
+            hashes = [f.get('sha256') for f in files if f.get('sha256')]
+            if hashes:
+                context_parts.append(f"File hashes: {', '.join(hashes)}")
+        
+        if threat_analysis:
+            context_parts.append(f"Threat type: {threat_analysis.get('threat_type', 'unknown')}")
+            if threat_analysis.get('indicators'):
+                context_parts.append(f"IOCs: {', '.join(str(i) for i in threat_analysis['indicators'][:10])}")
+        
+        context = "\n".join(context_parts)
+        
+        system_prompt = """You are a threat detection engineer creating detection rules.
+Generate accurate, production-ready detection rules based on observed attack patterns.
+Minimize false positives while ensuring detection coverage."""
+        
+        prompt = f"""Generate detection rules for this attack pattern:
+
+ATTACK CONTEXT:
+{context}
+
+REQUESTED RULE FORMATS: {', '.join(rule_formats)}
+
+Generate rules in JSON format:
+- sigma_rules: list of Sigma rule YAML strings (for SIEM detection)
+- firewall_rules: list of iptables/nftables commands
+- cowrie_filter: dict with command patterns to flag
+- yara_rules: list of YARA rule strings (if file hashes available)
+- snort_rules: list of Snort/Suricata rules (if network indicators)
+- detection_logic: string explaining the detection strategy
+- false_positive_notes: string with guidance on tuning
+- deployment_priority: string (immediate/standard/low)"""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["generated"] = True
+            result["generated_at"] = datetime.now(timezone.utc).isoformat()
+            result["session_id"] = session.get('id')
+            return result
+        
+        return {
+            "generated": True,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "session_id": session.get('id'),
+            "raw_rules": response,
+            "parse_error": True
         }

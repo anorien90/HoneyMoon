@@ -77,6 +77,9 @@ export async function viewHoneypotSession(id) {
       
       <div class="honeypot-session-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; padding: 0.75rem; background: var(--glass); border-radius: var(--radius);">
         <button id="hpAnalyzeBtn" class="small border rounded px-2 py-1" title="Analyze session with AI">🤖 Analyze with AI</button>
+        <button id="hpFormalReportBtn" class="small border rounded px-2 py-1" title="Generate formal forensic report">📋 Formal Report</button>
+        <button id="hpCountermeasuresBtn" class="small border rounded px-2 py-1" title="Get active countermeasure recommendations">⚔️ Countermeasures</button>
+        <button id="hpDetectionRulesBtn" class="small border rounded px-2 py-1" title="Generate detection rules">🛡️ Detection Rules</button>
         <button id="hpFindSimilarBtn" class="small border rounded px-2 py-1" title="Find similar attackers">🔍 Find Similar</button>
         <button id="hpIndexBtn" class="small border rounded px-2 py-1" title="Index for similarity search">📊 Index Session</button>
         ${s.src_ip ? `<button id="hpLocateBtn" class="small border rounded px-2 py-1" title="Locate attacker on map">📍 Locate Attacker</button>` : ''}
@@ -219,6 +222,60 @@ export async function viewHoneypotSession(id) {
         if (s.src_ip) {
           window.dispatchEvent(new CustomEvent('honeypot:locate', { detail: { ip: s.src_ip } }));
           ui.hideModal();
+        }
+      });
+
+      // NEW: Formal Report button handler
+      document.getElementById('hpFormalReportBtn')?.addEventListener('click', async () => {
+        ui.setLoading(true, 'Generating formal forensic report...');
+        try {
+          const reportRes = await honeypotApi.generateFormalReport(s.id);
+          ui.setLoading(false);
+          if (reportRes.ok && reportRes.data) {
+            showFormalReport(reportRes.data, s);
+          } else {
+            ui.toast(reportRes.error || 'Report generation failed');
+          }
+        } catch (e) {
+          ui.setLoading(false);
+          ui.toast('Report generation failed');
+          console.error('Formal report error:', e);
+        }
+      });
+
+      // NEW: Countermeasures button handler
+      document.getElementById('hpCountermeasuresBtn')?.addEventListener('click', async () => {
+        ui.setLoading(true, 'Getting countermeasure recommendations...');
+        try {
+          const cmRes = await honeypotApi.getActiveCountermeasures(s.id);
+          ui.setLoading(false);
+          if (cmRes.ok && cmRes.data) {
+            showCountermeasures(cmRes.data, s);
+          } else {
+            ui.toast(cmRes.error || 'Countermeasure recommendation failed');
+          }
+        } catch (e) {
+          ui.setLoading(false);
+          ui.toast('Countermeasure recommendation failed');
+          console.error('Countermeasures error:', e);
+        }
+      });
+
+      // NEW: Detection Rules button handler
+      document.getElementById('hpDetectionRulesBtn')?.addEventListener('click', async () => {
+        ui.setLoading(true, 'Generating detection rules...');
+        try {
+          const rulesRes = await honeypotApi.generateDetectionRules(s.id);
+          ui.setLoading(false);
+          if (rulesRes.ok && rulesRes.data) {
+            showDetectionRules(rulesRes.data, s);
+          } else {
+            ui.toast(rulesRes.error || 'Detection rule generation failed');
+          }
+        } catch (e) {
+          ui.setLoading(false);
+          ui.toast('Detection rule generation failed');
+          console.error('Detection rules error:', e);
         }
       });
 
@@ -396,6 +453,325 @@ function showArtifactExamination(data, artifactName) {
     html,
     allowPin: true,
     onPin: () => ui.addPinnedCard(`Artifact ${artifactName}`, html)
+  });
+}
+
+// Show formal forensic report
+function showFormalReport(data, session) {
+  let html = `<div class="formal-report" style="max-height: 70vh; overflow-y: auto;">`;
+  
+  // Header with severity badge
+  const severityColors = {
+    critical: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a',
+    info: '#2563eb'
+  };
+  const severityColor = severityColors[data.severity?.toLowerCase()] || '#6b7280';
+  
+  html += `
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${severityColor};">
+      <div>
+        <div class="font-medium">📋 Formal Forensic Analysis Report</div>
+        <div class="text-xs muted">Session ${session.id} | ${escapeHtml(session.src_ip || '—')} | Generated: ${data.generated_at || 'now'}</div>
+        <div class="text-xs mt-1">Severity: <span style="color: ${severityColor}; font-weight: 600;">${escapeHtml(data.severity || 'unknown')}</span> | Confidence: ${data.confidence ? Math.round(data.confidence * 100) + '%' : '—'}</div>
+      </div>
+    </div>`;
+  
+  // Executive Summary
+  if (data.summary) {
+    html += `<div class="mt-3"><strong>📝 Executive Summary</strong><div class="text-sm mt-1" style="white-space: pre-wrap;">${escapeHtml(data.summary)}</div></div>`;
+  }
+  
+  // Report sections
+  if (data.report_sections) {
+    Object.entries(data.report_sections).forEach(([section, content]) => {
+      const sectionTitle = section.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      html += `<div class="mt-3"><strong>${escapeHtml(sectionTitle)}</strong><div class="text-sm mt-1" style="white-space: pre-wrap;">${escapeHtml(content || '')}</div></div>`;
+    });
+  }
+  
+  // MITRE ATT&CK Mapping
+  if (data.mitre_tactics?.length || data.mitre_techniques?.length) {
+    html += `<div class="mt-3"><strong>🎯 MITRE ATT&CK Mapping</strong>`;
+    if (data.mitre_tactics?.length) {
+      html += `<div class="text-xs mt-1"><strong>Tactics:</strong> <span style="display: inline-flex; gap: 0.25rem; flex-wrap: wrap;">`;
+      data.mitre_tactics.forEach(t => {
+        html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(t)}</span>`;
+      });
+      html += `</span></div>`;
+    }
+    if (data.mitre_techniques?.length) {
+      html += `<div class="text-xs mt-1"><strong>Techniques:</strong> <span style="display: inline-flex; gap: 0.25rem; flex-wrap: wrap;">`;
+      data.mitre_techniques.forEach(t => {
+        html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(t)}</span>`;
+      });
+      html += `</span></div>`;
+    }
+    html += `</div>`;
+  }
+  
+  // IOCs
+  if (data.iocs) {
+    html += `<div class="mt-3"><strong>🔍 Indicators of Compromise</strong>`;
+    if (data.iocs.network_iocs?.length) {
+      html += `<div class="text-xs mt-1"><strong>Network:</strong><ul style="margin-left: 1rem;">`;
+      data.iocs.network_iocs.slice(0, 10).forEach(ioc => html += `<li>${escapeHtml(ioc)}</li>`);
+      html += `</ul></div>`;
+    }
+    if (data.iocs.host_iocs?.length) {
+      html += `<div class="text-xs mt-1"><strong>Host:</strong><ul style="margin-left: 1rem;">`;
+      data.iocs.host_iocs.slice(0, 10).forEach(ioc => html += `<li>${escapeHtml(ioc)}</li>`);
+      html += `</ul></div>`;
+    }
+    if (data.iocs.behavioral_iocs?.length) {
+      html += `<div class="text-xs mt-1"><strong>Behavioral:</strong><ul style="margin-left: 1rem;">`;
+      data.iocs.behavioral_iocs.slice(0, 10).forEach(ioc => html += `<li>${escapeHtml(ioc)}</li>`);
+      html += `</ul></div>`;
+    }
+    html += `</div>`;
+  }
+  
+  // Recommended Actions
+  if (data.recommended_actions?.length) {
+    html += `<div class="mt-3"><strong>✅ Recommended Actions</strong><ol class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.recommended_actions.forEach(action => {
+      html += `<li>${escapeHtml(action)}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+  
+  // Threat Actor Profile
+  if (data.threat_actor_profile) {
+    const profile = data.threat_actor_profile;
+    html += `<div class="mt-3"><strong>👤 Threat Actor Profile</strong><div class="text-xs mt-1">`;
+    if (profile.skill_level) html += `<div>Skill Level: ${escapeHtml(profile.skill_level)}</div>`;
+    if (profile.automation !== undefined) html += `<div>Automation: ${profile.automation ? 'Likely Automated' : 'Manual'}</div>`;
+    if (profile.motivation) html += `<div>Motivation: ${escapeHtml(profile.motivation)}</div>`;
+    html += `</div></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `📋 Formal Forensic Report - Session ${session.id}`,
+    html,
+    allowPin: true,
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`Report ${session.id}`, html),
+    onPinLeft: () => ui.addPanelToZone(`Report ${session.id}`, html, 'left'),
+    onPinMiddle: () => ui.addPanelToZone(`Report ${session.id}`, html, 'middle'),
+    onPinRight: () => ui.addPanelToZone(`Report ${session.id}`, html, 'right')
+  });
+}
+
+// Show active countermeasure recommendations
+function showCountermeasures(data, session) {
+  const priorityColors = {
+    immediate: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a'
+  };
+  const priorityColor = priorityColors[data.priority?.toLowerCase()] || '#6b7280';
+  
+  let html = `<div class="countermeasures" style="max-height: 70vh; overflow-y: auto;">`;
+  
+  // Header
+  html += `
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${priorityColor};">
+      <div>
+        <div class="font-medium">⚔️ Active Countermeasure Recommendations</div>
+        <div class="text-xs muted">Session ${session.id} | ${session.end_ts ? 'Closed' : '🔴 Active'}</div>
+        <div class="text-xs mt-1">Priority: <span style="color: ${priorityColor}; font-weight: 600;">${escapeHtml(data.priority || 'unknown')}</span></div>
+      </div>
+    </div>`;
+  
+  // Recommended Capability
+  if (data.recommended_capability) {
+    const capabilityDescriptions = {
+      json_tail: '📊 JSON Tail - Real-time command monitoring via cowrie.json',
+      manhole: '🔧 Manhole - Direct Python REPL access to session objects',
+      output_plugin: '⚡ Output Plugin - Automated response triggers',
+      proxy_mode: '🖥️ Proxy Mode - Pass-through to real backend VM',
+      playlog: '🎬 Playlog - Terminal session replay'
+    };
+    html += `<div class="mt-2"><strong>🎯 Recommended Capability</strong>
+      <div class="text-sm mt-1 p-2 border rounded" style="background: var(--glass);">
+        ${capabilityDescriptions[data.recommended_capability] || escapeHtml(data.recommended_capability)}
+      </div>
+    </div>`;
+  }
+  
+  // Response Actions
+  if (data.response_actions?.length) {
+    html += `<div class="mt-3"><strong>🎭 Recommended Response Actions</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.response_actions.forEach(action => {
+      const actionColors = {
+        observe: '#6b7280',
+        delay: '#ca8a04',
+        fake_data: '#8b5cf6',
+        tarpit: '#ea580c',
+        disconnect: '#dc2626',
+        alert: '#dc2626',
+        capture: '#2563eb',
+        deception: '#8b5cf6'
+      };
+      const color = actionColors[action] || '#6b7280';
+      html += `<span style="padding: 0.25rem 0.75rem; background: ${color}22; border: 1px solid ${color}; border-radius: 4px; color: ${color};">${escapeHtml(action)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  // Implementation Steps
+  if (data.implementation_steps?.length) {
+    html += `<div class="mt-3"><strong>📝 Implementation Steps</strong><ol class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.implementation_steps.forEach(step => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(step)}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+  
+  // Manhole Commands (if recommended)
+  if (data.manhole_commands?.length) {
+    html += `<div class="mt-3"><strong>🔧 Manhole Commands</strong>
+      <div class="text-xs mt-1 muted">SSH to Manhole: <code>ssh -p 2500 -l cowrie localhost</code></div>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; overflow-x: auto;">`;
+    data.manhole_commands.forEach(cmd => {
+      html += `>>> ${escapeHtml(cmd)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+  
+  // Monitoring Queries (for JSON tail)
+  if (data.monitoring_queries?.length) {
+    html += `<div class="mt-3"><strong>📊 Monitoring Queries (jq)</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; overflow-x: auto;">`;
+    data.monitoring_queries.forEach(query => {
+      html += `tail -f cowrie.json | jq '${escapeHtml(query)}'\n`;
+    });
+    html += `</pre></div>`;
+  }
+  
+  // Output Plugin Config
+  if (data.output_plugin_config) {
+    html += `<div class="mt-3"><strong>⚡ Output Plugin Configuration</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; overflow-x: auto;">${escapeHtml(JSON.stringify(data.output_plugin_config, null, 2))}</pre>
+    </div>`;
+  }
+  
+  // Risk Assessment
+  if (data.risk_assessment) {
+    html += `<div class="mt-3"><strong>⚠️ Risk Assessment</strong><div class="text-xs mt-1" style="white-space: pre-wrap;">${escapeHtml(data.risk_assessment)}</div></div>`;
+  }
+  
+  // Timing and Expected Outcome
+  if (data.timing) {
+    html += `<div class="mt-2"><strong>⏱️ Timing:</strong> <span class="text-xs">${escapeHtml(data.timing)}</span></div>`;
+  }
+  if (data.expected_outcome) {
+    html += `<div class="mt-2"><strong>🎯 Expected Outcome:</strong> <span class="text-xs">${escapeHtml(data.expected_outcome)}</span></div>`;
+  }
+  if (data.rollback_plan) {
+    html += `<div class="mt-2"><strong>↩️ Rollback Plan:</strong> <span class="text-xs">${escapeHtml(data.rollback_plan)}</span></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `⚔️ Active Countermeasures - Session ${session.id}`,
+    html,
+    allowPin: true,
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`Countermeasures ${session.id}`, html),
+    onPinLeft: () => ui.addPanelToZone(`CM ${session.id}`, html, 'left'),
+    onPinMiddle: () => ui.addPanelToZone(`CM ${session.id}`, html, 'middle'),
+    onPinRight: () => ui.addPanelToZone(`CM ${session.id}`, html, 'right')
+  });
+}
+
+// Show detection rules
+function showDetectionRules(data, session) {
+  let html = `<div class="detection-rules" style="max-height: 70vh; overflow-y: auto;">`;
+  
+  html += `
+    <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius);">
+      <div class="font-medium">🛡️ Detection Rules</div>
+      <div class="text-xs muted">Generated from Session ${session.id} | ${escapeHtml(session.src_ip || '—')}</div>
+      ${data.deployment_priority ? `<div class="text-xs mt-1">Priority: <strong>${escapeHtml(data.deployment_priority)}</strong></div>` : ''}
+    </div>`;
+  
+  // Detection Logic
+  if (data.detection_logic) {
+    html += `<div class="mt-2"><strong>📋 Detection Strategy</strong><div class="text-sm mt-1" style="white-space: pre-wrap;">${escapeHtml(data.detection_logic)}</div></div>`;
+  }
+  
+  // Sigma Rules
+  if (data.sigma_rules?.length) {
+    html += `<div class="mt-3"><strong>📊 Sigma Rules (SIEM)</strong>`;
+    data.sigma_rules.forEach((rule, i) => {
+      html += `<details class="mt-1"><summary class="text-xs cursor-pointer">Rule ${i + 1}</summary>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">${escapeHtml(rule)}</pre>
+      </details>`;
+    });
+    html += `</div>`;
+  }
+  
+  // Firewall Rules
+  if (data.firewall_rules?.length) {
+    html += `<div class="mt-3"><strong>🔥 Firewall Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">`;
+    data.firewall_rules.forEach(rule => {
+      html += `${escapeHtml(rule)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+  
+  // Cowrie Filter
+  if (data.cowrie_filter) {
+    html += `<div class="mt-3"><strong>🍯 Cowrie Command Filter</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">${escapeHtml(JSON.stringify(data.cowrie_filter, null, 2))}</pre>
+    </div>`;
+  }
+  
+  // YARA Rules
+  if (data.yara_rules?.length) {
+    html += `<div class="mt-3"><strong>🔬 YARA Rules</strong>`;
+    data.yara_rules.forEach((rule, i) => {
+      html += `<details class="mt-1"><summary class="text-xs cursor-pointer">Rule ${i + 1}</summary>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">${escapeHtml(rule)}</pre>
+      </details>`;
+    });
+    html += `</div>`;
+  }
+  
+  // Snort Rules
+  if (data.snort_rules?.length) {
+    html += `<div class="mt-3"><strong>🦈 Snort/Suricata Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">`;
+    data.snort_rules.forEach(rule => {
+      html += `${escapeHtml(rule)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+  
+  // False Positive Notes
+  if (data.false_positive_notes) {
+    html += `<div class="mt-3"><strong>⚠️ False Positive Guidance</strong><div class="text-xs mt-1" style="white-space: pre-wrap;">${escapeHtml(data.false_positive_notes)}</div></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `🛡️ Detection Rules - Session ${session.id}`,
+    html,
+    allowPin: true,
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`Rules ${session.id}`, html),
+    onPinLeft: () => ui.addPanelToZone(`Rules ${session.id}`, html, 'left'),
+    onPinMiddle: () => ui.addPanelToZone(`Rules ${session.id}`, html, 'middle'),
+    onPinRight: () => ui.addPanelToZone(`Rules ${session.id}`, html, 'right')
   });
 }
 
