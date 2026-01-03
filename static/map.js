@@ -111,9 +111,40 @@ const popupTemplate = (node) => {
   const http = summary.http ? escapeHtml(summary.http) : '';
   const tags = summary.tags ? summary.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
   
+  // Check for extra live data
+  const extra = node.extra_data || {};
+  const liveSessions = extra.live_sessions || 0;
+  const liveFlows = extra.live_flows || 0;
+  const outgoingConnections = extra.outgoing_connections || 0;
+  const threatLevel = extra.threat_level || '';
+  
+  // Build threat indicator if present
+  let threatBadge = '';
+  if (threatLevel) {
+    const colors = {
+      critical: '#dc2626',
+      high: '#ea580c',
+      medium: '#ca8a04',
+      low: '#16a34a'
+    };
+    const color = colors[threatLevel.toLowerCase()] || '#6b7280';
+    threatBadge = `<span style="padding:2px 8px;background:${color};color:white;border-radius:4px;font-size:11px;font-weight:600;">${threatLevel.toUpperCase()}</span>`;
+  }
+  
+  // Build live stats if present
+  let liveStats = '';
+  if (liveSessions > 0 || liveFlows > 0 || outgoingConnections > 0) {
+    const stats = [];
+    if (liveSessions > 0) stats.push(`${liveSessions} sessions`);
+    if (liveFlows > 0) stats.push(`${liveFlows} flows`);
+    if (outgoingConnections > 0) stats.push(`${outgoingConnections} outgoing`);
+    liveStats = `<div class="small muted" style="margin-top:0.25rem;">🔴 Live: ${stats.join(' • ')}</div>`;
+  }
+  
   return `<div class="map-popup" style="min-width:240px">
-    <div class="font-medium">${escapeHtml(node.ip || 'Unknown')}${node.hostname ? ` • ${escapeHtml(node.hostname)}` : ''}</div>
+    <div class="font-medium">${escapeHtml(node.ip || 'Unknown')}${node.hostname ? ` • ${escapeHtml(node.hostname)}` : ''} ${threatBadge}</div>
     <div class="small muted">${orgName ? escapeHtml(orgName) : ''}${location ? ` • ${escapeHtml(location)}` : ''}</div>
+    ${liveStats}
     <div class="map-popup-grid" style="margin-top:0.4rem; display:grid; grid-template-columns:repeat(1,1fr); gap:0.35rem;">
       <div><div class="muted small">Open ports</div><div>${ports || '—'}</div></div>
       <div><div class="muted small">OS / Fingerprint</div><div>${os || '—'}</div></div>
@@ -126,6 +157,7 @@ const popupTemplate = (node) => {
       <button class="small popup-action" data-action="pin-middle" data-ip="${escapeHtml(node.ip || '')}" title="Pin to middle (overlay)">● Middle</button>
       <button class="small popup-action" data-action="pin-right" data-ip="${escapeHtml(node.ip || '')}" title="Pin to right sidebar">▶ Right</button>
       <button class="small popup-action" data-action="pin" data-ip="${escapeHtml(node.ip || '')}" title="Pin to workspace">📌 Pin</button>
+      <button class="small popup-action" data-action="analyze" data-ip="${escapeHtml(node.ip || '')}" title="Find similar attackers">🔍 Similar</button>
     </div>
   </div>`;
 };
@@ -138,7 +170,13 @@ const MARKER_STYLES = {
   first: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
   last: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
   middle: { stroke: '#7a2e00', fill: '#ff7b00', radius: 7 },
-  outgoing: { stroke: '#0f172a', fill: '#10b981', radius: 8 }  // Green for outgoing connections
+  outgoing: { stroke: '#0f172a', fill: '#10b981', radius: 8 },  // Green for outgoing connections
+  attacker: { stroke: '#7f1d1d', fill: '#dc2626', radius: 10 },  // Red for attackers
+  threat_critical: { stroke: '#7f1d1d', fill: '#dc2626', radius: 12 },  // Large red for critical threats
+  threat_high: { stroke: '#7c2d12', fill: '#ea580c', radius: 10 },  // Orange for high threats
+  threat_medium: { stroke: '#713f12', fill: '#ca8a04', radius: 8 },  // Yellow for medium threats
+  threat_low: { stroke: '#14532d', fill: '#16a34a', radius: 7 },  // Green for low threats
+  cluster: { stroke: '#581c87', fill: '#9333ea', radius: 9 }  // Purple for cluster members
 };
 
 export function addMarkerForNode(node, role = 'middle') {

@@ -73,6 +73,13 @@ export async function viewHoneypotSession(id) {
           ${s.end_ts ? `<span>→ ${escapeHtml(s.end_ts)}</span>` : ''}
           ${s.raw_events ? `<span>📊 ${s.raw_events.length || 0} events</span>` : ''}
         </div>
+      </div>
+      
+      <div class="honeypot-session-actions" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0; padding: 0.75rem; background: var(--glass); border-radius: var(--radius);">
+        <button id="hpAnalyzeBtn" class="small border rounded px-2 py-1" title="Analyze session with AI">🤖 Analyze with AI</button>
+        <button id="hpFindSimilarBtn" class="small border rounded px-2 py-1" title="Find similar attackers">🔍 Find Similar</button>
+        <button id="hpIndexBtn" class="small border rounded px-2 py-1" title="Index for similarity search">📊 Index Session</button>
+        ${s.src_ip ? `<button id="hpLocateBtn" class="small border rounded px-2 py-1" title="Locate attacker on map">📍 Locate Attacker</button>` : ''}
       </div>`;
 
     if (s.commands && s.commands.length) {
@@ -100,13 +107,17 @@ export async function viewHoneypotSession(id) {
           <div class="honeypot-section-content">`;
       s.files.slice(0, 100).forEach(f => {
         const downloadUrl = f.saved_path ? honeypotApi.artifactDownloadUrl(f.saved_path.split('/').pop()) : '';
+        const artifactName = f.saved_path ? f.saved_path.split('/').pop() : '';
         html += `
             <div class="honeypot-file-row">
               <div>
                 <div class="honeypot-file-name">${escapeHtml(f.filename || '—')}</div>
                 ${f.sha256 ? `<div class="honeypot-file-hash">${escapeHtml(f.sha256)}</div>` : ''}
               </div>
-              ${downloadUrl ? `<a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer" class="popup-action">Download</a>` : ''}
+              <div style="display: flex; gap: 0.25rem;">
+                ${downloadUrl ? `<a href="${escapeHtml(downloadUrl)}" target="_blank" rel="noopener noreferrer" class="popup-action">Download</a>` : ''}
+                ${artifactName ? `<button class="popup-action hp-examine-artifact" data-artifact="${escapeHtml(artifactName)}">🔍 Examine</button>` : ''}
+              </div>
             </div>`;
       });
       html += `</div></div>`;
@@ -153,6 +164,86 @@ export async function viewHoneypotSession(id) {
       }
     });
 
+    // Set up action button handlers
+    setTimeout(() => {
+      document.getElementById('hpAnalyzeBtn')?.addEventListener('click', async () => {
+        ui.setLoading(true, 'Analyzing session with AI...');
+        try {
+          const analysisRes = await honeypotApi.analyzeSession(s.id);
+          ui.setLoading(false);
+          if (analysisRes.ok && analysisRes.data) {
+            showThreatAnalysisResult(analysisRes.data, s);
+          } else {
+            ui.toast(analysisRes.error || 'Analysis failed');
+          }
+        } catch (e) {
+          ui.setLoading(false);
+          ui.toast('Analysis failed');
+          console.error('Session analysis error:', e);
+        }
+      });
+
+      document.getElementById('hpFindSimilarBtn')?.addEventListener('click', async () => {
+        ui.setLoading(true, 'Finding similar sessions...');
+        try {
+          const similarRes = await honeypotApi.findSimilarSessions(s.id);
+          ui.setLoading(false);
+          if (similarRes.ok && similarRes.data?.results?.length) {
+            showSimilarSessions(similarRes.data.results, s);
+          } else {
+            ui.toast('No similar sessions found');
+          }
+        } catch (e) {
+          ui.setLoading(false);
+          ui.toast('Search failed');
+        }
+      });
+
+      document.getElementById('hpIndexBtn')?.addEventListener('click', async () => {
+        ui.setLoading(true, 'Indexing session...');
+        try {
+          const indexRes = await honeypotApi.indexSession(s.id);
+          ui.setLoading(false);
+          if (indexRes.ok) {
+            ui.toast('Session indexed for similarity search');
+          } else {
+            ui.toast(indexRes.error || 'Indexing failed');
+          }
+        } catch (e) {
+          ui.setLoading(false);
+          ui.toast('Indexing failed');
+        }
+      });
+
+      document.getElementById('hpLocateBtn')?.addEventListener('click', () => {
+        if (s.src_ip) {
+          window.dispatchEvent(new CustomEvent('honeypot:locate', { detail: { ip: s.src_ip } }));
+          ui.hideModal();
+        }
+      });
+
+      // Handle examine artifact buttons
+      document.querySelectorAll('.hp-examine-artifact').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const artifactName = btn.dataset.artifact;
+          if (!artifactName) return;
+          ui.setLoading(true, 'Examining artifact...');
+          try {
+            const examRes = await honeypotApi.examineArtifact(artifactName);
+            ui.setLoading(false);
+            if (examRes.ok && examRes.data) {
+              showArtifactExamination(examRes.data, artifactName);
+            } else {
+              ui.toast(examRes.error || 'Examination failed');
+            }
+          } catch (e) {
+            ui.setLoading(false);
+            ui.toast('Examination failed');
+          }
+        });
+      });
+    }, 200);
+
     if (s.src_ip) {
       window.dispatchEvent(new CustomEvent('honeypot:locate', { detail: { ip: s.src_ip, silent: true }}));
     }
@@ -161,6 +252,151 @@ export async function viewHoneypotSession(id) {
     ui.showModal({ title: `Session ${id}`, text: 'Loading failed, please retry', allowPin: false });
     console.error('viewHoneypotSession error:', err);
   }
+}
+
+// Show threat analysis result
+function showThreatAnalysisResult(data, session) {
+  const severityColors = {
+    critical: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a',
+    info: '#2563eb'
+  };
+  const severityColor = severityColors[data.severity?.toLowerCase()] || '#6b7280';
+  
+  let html = `<div class="threat-analysis-result">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${severityColor};">
+      <div>
+        <div class="font-medium">${escapeHtml(data.threat_type || 'Unknown Threat')}</div>
+        <div class="text-xs muted">Severity: <span style="color: ${severityColor}; font-weight: 600;">${escapeHtml(data.severity || 'unknown')}</span> • Confidence: ${data.confidence ? Math.round(data.confidence * 100) + '%' : '—'}</div>
+      </div>
+    </div>`;
+  
+  if (data.summary) {
+    html += `<div class="mt-2"><strong>Summary</strong><div class="text-sm mt-1">${escapeHtml(data.summary)}</div></div>`;
+  }
+  
+  if (data.tactics?.length) {
+    html += `<div class="mt-2"><strong>MITRE ATT&CK Tactics</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.tactics.forEach(t => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(t)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  if (data.techniques?.length) {
+    html += `<div class="mt-2"><strong>MITRE ATT&CK Techniques</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.techniques.forEach(t => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(t)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  if (data.indicators?.length) {
+    html += `<div class="mt-2"><strong>Indicators</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.indicators.slice(0, 10).forEach(ind => {
+      html += `<li>${escapeHtml(ind)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  if (data.recommendations?.length) {
+    html += `<div class="mt-2"><strong>Recommendations</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.recommendations.slice(0, 10).forEach(rec => {
+      html += `<li>${escapeHtml(rec)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `🔍 Threat Analysis - Session ${session.id}`,
+    html,
+    allowPin: true,
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`Threat ${session.id}`, html),
+    onPinLeft: () => ui.addPanelToZone(`Threat ${session.id}`, html, 'left'),
+    onPinMiddle: () => ui.addPanelToZone(`Threat ${session.id}`, html, 'middle'),
+    onPinRight: () => ui.addPanelToZone(`Threat ${session.id}`, html, 'right')
+  });
+}
+
+// Show similar sessions
+function showSimilarSessions(results, originalSession) {
+  let html = `<div class="similar-sessions">
+    <div class="text-sm muted mb-2">Sessions similar to ${originalSession.src_ip || `Session ${originalSession.id}`}:</div>`;
+  
+  results.forEach(r => {
+    const session = r.session || r;
+    const score = r.score ? ` (${Math.round(r.score * 100)}% similar)` : '';
+    html += `<div class="py-2 border-b clickable similar-session-row" data-session-id="${session.id}">
+      <div class="font-medium">Session ${session.id} — ${escapeHtml(session.src_ip || '—')}${score}</div>
+      <div class="text-xs muted">${escapeHtml(session.start_ts || '')} ${session.username ? `• ${escapeHtml(session.username)}` : ''}</div>
+    </div>`;
+  });
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `🔍 Similar Sessions`,
+    html,
+    allowPin: true,
+    onPin: () => ui.addPinnedCard('Similar Sessions', html)
+  });
+  
+  // Set up click handlers for similar sessions
+  setTimeout(() => {
+    document.querySelectorAll('.similar-session-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const sessionId = row.dataset.sessionId;
+        if (sessionId) {
+          ui.hideModal();
+          viewHoneypotSession(sessionId);
+        }
+      });
+    });
+  }, 200);
+}
+
+// Show artifact examination result
+function showArtifactExamination(data, artifactName) {
+  let html = `<div class="artifact-examination">
+    <div class="font-medium">📄 ${escapeHtml(artifactName)}</div>`;
+  
+  if (data.file_type) {
+    html += `<div class="text-xs muted mt-1">Type: ${escapeHtml(data.file_type)}</div>`;
+  }
+  
+  if (data.analysis) {
+    html += `<div class="mt-2"><strong>Analysis</strong><div class="text-sm mt-1 whitespace-pre-wrap">${escapeHtml(data.analysis)}</div></div>`;
+  }
+  
+  if (data.indicators?.length) {
+    html += `<div class="mt-2"><strong>Indicators of Compromise</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.indicators.forEach(ind => {
+      html += `<li>${escapeHtml(ind)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  if (data.recommendations?.length) {
+    html += `<div class="mt-2"><strong>Recommendations</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.recommendations.forEach(rec => {
+      html += `<li>${escapeHtml(rec)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `🔍 Artifact Examination`,
+    html,
+    allowPin: true,
+    onPin: () => ui.addPinnedCard(`Artifact ${artifactName}`, html)
+  });
 }
 
 export async function listHoneypotFlows(limit = 100) {

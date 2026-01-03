@@ -1,17 +1,72 @@
 services:
-  honeypot:
+  honeypot: 
     image: cowrie/cowrie:latest
     container_name: honeypot
-    restart: unless-stopped
-    ports:
+    restart:  unless-stopped
+    ports: 
       - "${HOST_SSH_PORT}:${COWRIE_PORT}"
     volumes:
-      - ./data/honeypot/log:/cowrie/cowrie-git/var/log/cowrie/:rw
+      - ./data/honeypot/log:/cowrie/cowrie-git/var/log/cowrie/: rw
       - ./data/honeypot/data:/data/cowrie/:rw
-    # Security / containment (recommendations)
     networks:
       - honeynet
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name:  qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant/storage:/qdrant/storage: rw
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - honeynet
+
+  # Embedding model service (e.g., using Ollama or a dedicated embedding server)
+  embedding:
+    image: ollama/ollama:latest
+    container_name: embedding
+    restart: unless-stopped
+    profiles:
+      - ai  # Only starts when explicitly requested
+    ports:
+      - "11434:11434"
+    volumes: 
+      - ./data/ollama:/root/.ollama:rw
+    networks:
+      - honeynet
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]  # Remove this block if no GPU
+
+  # LLM service (can use same Ollama instance or separate)
+  llm:
+    image: ollama/ollama:latest
+    container_name: llm
+    restart: unless-stopped
+    profiles:
+      - ai  # Only starts when explicitly requested
+    ports:
+      - "11435:11434"
+    volumes:
+      - ./data/ollama-llm:/root/.ollama:rw
+    networks:
+      - honeynet
+    deploy: 
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]  # Remove this block if no GPU
+
 networks:
-  honeynet:
+  honeynet: 
     driver: bridge
