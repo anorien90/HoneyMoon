@@ -8,6 +8,7 @@ import { escapeHtml } from './util.js';
 import * as honeypotUI from './honeypot-ui.js';
 import * as dbUI from './db-ui.js';
 import * as honeypotApi from './honeypot.js';
+import * as liveView from './live-view.js';
 import {
   applySavedInputs,
   getState,
@@ -631,6 +632,7 @@ async function init() {
     
     ui.initUI();
     dbUI.initDatabasePanel();
+    liveView.initLiveView();
     applySavedInputs({
       ipInput: elements.ipInput(),
       maxttlInput: elements.maxttl(),

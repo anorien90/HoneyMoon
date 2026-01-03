@@ -24,3 +24,7 @@ export function artifactDownloadUrl(name) {
 export async function listFlows(limit = 100) {
   return apiGet(`/api/v1/honeypot/flows?limit=${limit}`, { timeout: 30000, retries: 2 });
 }
+
+export async function getLiveConnections(minutes = 15, limit = 100) {
+  return apiGet(`/api/v1/live/connections?minutes=${minutes}&limit=${limit}`, { timeout: 30000, retries: 2 });
+}
