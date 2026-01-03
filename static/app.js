@@ -82,7 +82,7 @@ export async function locateIP() {
       return;
     }
     
-    const node = res.data. node;
+    const node = res.data.node;
     
     ui.ensurePanelOpen('map');
     
