@@ -395,6 +395,117 @@ class MCPServer:
                 "properties": {}
             }
         ))
+        
+        # Chat conversation tools
+        self._register_tool(MCPTool(
+            name="create_conversation",
+            description="Create a new chat conversation for persistent analysis sessions.",
+            category=ToolCategory.ANALYSIS,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Conversation title"},
+                    "context_type": {"type": "string", "description": "Type of context (session, node, threat, cluster)"},
+                    "context_id": {"type": "string", "description": "ID of the related entity"},
+                    "initial_message": {"type": "string", "description": "Initial user message"}
+                }
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="continue_conversation",
+            description="Continue a chat conversation with an LLM response.",
+            category=ToolCategory.ANALYSIS,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "conversation_id": {"type": "integer", "description": "Conversation ID"},
+                    "message": {"type": "string", "description": "User message"}
+                },
+                "required": ["conversation_id", "message"]
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="list_conversations",
+            description="List chat conversations, optionally filtered by context type.",
+            category=ToolCategory.INVESTIGATION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "context_type": {"type": "string", "description": "Filter by context type"},
+                    "limit": {"type": "integer", "default": 50, "description": "Maximum results"}
+                }
+            }
+        ))
+        
+        # Countermeasure record tools
+        self._register_tool(MCPTool(
+            name="create_countermeasure_record",
+            description="Create a countermeasure record from a planned response.",
+            category=ToolCategory.COUNTERMEASURE,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "threat_analysis_id": {"type": "integer", "description": "Associated threat analysis ID"},
+                    "name": {"type": "string", "description": "Countermeasure name"}
+                },
+                "required": ["threat_analysis_id"]
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="approve_countermeasure",
+            description="Approve a countermeasure for execution.",
+            category=ToolCategory.COUNTERMEASURE,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "countermeasure_id": {"type": "integer", "description": "Countermeasure ID"},
+                    "approved_by": {"type": "string", "description": "Approver identifier"}
+                },
+                "required": ["countermeasure_id"]
+            },
+            requires_confirmation=True
+        ))
+        
+        self._register_tool(MCPTool(
+            name="list_countermeasure_records",
+            description="List countermeasure records, optionally filtered by status.",
+            category=ToolCategory.INVESTIGATION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "description": "Filter by status (planned, approved, executing, completed, failed)"},
+                    "limit": {"type": "integer", "default": 50, "description": "Maximum results"}
+                }
+            }
+        ))
+        
+        # Reindexing tools
+        self._register_tool(MCPTool(
+            name="reindex_sessions",
+            description="Reindex honeypot sessions to the vector store for improved RAG search.",
+            category=ToolCategory.MONITORING,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Maximum sessions to index"}
+                }
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="reindex_nodes",
+            description="Reindex network nodes to the vector store for improved RAG search.",
+            category=ToolCategory.MONITORING,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Maximum nodes to index"}
+                }
+            }
+        ))
     
     def _register_tool(self, tool: MCPTool):
         """Register a tool with the MCP server."""
@@ -662,6 +773,62 @@ class MCPServer:
                 "vector_store": self.engine.get_vector_store_status(),
                 "mcp_tools_count": len(self._tools)
             }
+        
+        # Chat conversation tools
+        elif name == "create_conversation":
+            return self.engine.create_conversation(
+                title=params.get("title"),
+                context_type=params.get("context_type"),
+                context_id=params.get("context_id"),
+                initial_message=params.get("initial_message")
+            )
+        
+        elif name == "continue_conversation":
+            return self.engine.continue_conversation(
+                params["conversation_id"],
+                params["message"]
+            )
+        
+        elif name == "list_conversations":
+            return {
+                "conversations": self.engine.list_conversations(
+                    context_type=params.get("context_type"),
+                    limit=params.get("limit", 50)
+                )
+            }
+        
+        # Countermeasure record tools
+        elif name == "create_countermeasure_record":
+            # First get the threat analysis plan
+            plan = self.engine.plan_countermeasure(params["threat_analysis_id"])
+            if plan.get("error"):
+                return plan
+            return self.engine.create_countermeasure_record(
+                params["threat_analysis_id"],
+                plan,
+                name=params.get("name")
+            )
+        
+        elif name == "approve_countermeasure":
+            return self.engine.approve_countermeasure(
+                params["countermeasure_id"],
+                approved_by=params.get("approved_by")
+            )
+        
+        elif name == "list_countermeasure_records":
+            return {
+                "countermeasures": self.engine.list_countermeasure_records(
+                    status=params.get("status"),
+                    limit=params.get("limit", 50)
+                )
+            }
+        
+        # Reindexing tools
+        elif name == "reindex_sessions":
+            return self.engine.reindex_all_sessions(limit=params.get("limit"))
+        
+        elif name == "reindex_nodes":
+            return self.engine.reindex_all_nodes(limit=params.get("limit"))
         
         return {"error": f"Tool implementation not found: {name}"}
     
