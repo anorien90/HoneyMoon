@@ -350,6 +350,8 @@ function renderLiveData(incomingData, outgoingData = { connections: [] }) {
       } else {
         const existing = sourceIPs.get(ip);
         existing.outgoingCount = (existing.outgoingCount || 0) + 1;
+        // Mark as having outgoing connections even if it was originally an incoming source
+        existing.hasOutgoing = true;
       }
     }
   });
@@ -357,11 +359,14 @@ function renderLiveData(incomingData, outgoingData = { connections: [] }) {
   // Add markers for all unique source IPs
   sourceIPs.forEach((nodeData, ip) => {
     // Determine marker role based on type
+    // Priority: If it's an attacker (incoming), show as attacker (more important security-wise)
+    // If it's only an outgoing destination, show as outgoing
+    // Otherwise show as middle (flow node)
     let role = 'middle';
     if (nodeData.type === 'attacker') {
-      role = 'first';  // Red marker for attackers
-    } else if (nodeData.type === 'outgoing_dest') {
-      role = 'outgoing';  // Different marker for outgoing destinations
+      role = 'first';  // Red marker for attackers (highest priority)
+    } else if (nodeData.type === 'outgoing_dest' || (nodeData.hasOutgoing && nodeData.type !== 'flow_src')) {
+      role = 'outgoing';  // Green marker for outgoing destinations
     }
     
     const marker = mapModule.addMarkerForNode({
