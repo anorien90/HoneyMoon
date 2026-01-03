@@ -320,12 +320,8 @@ function renderLiveData(data) {
  * Draw arcs showing connections from attackers to honeypot
  */
 function drawLiveArcs(sessions, flows, honeypotLocation) {
-  // Create a layer group for live arcs if not exists
+  // Check if Leaflet is available
   if (typeof L === 'undefined') return;
-  
-  // Get the map instance through the arcs layer
-  const map = window.L?.map;
-  if (!map) return;
   
   // Collect coordinates for connection lines
   const arcs = [];
@@ -360,29 +356,33 @@ function drawLiveArcs(sessions, flows, honeypotLocation) {
     }
   });
   
-  // Draw the arcs using mapModule's drawPath or custom implementation
-  if (arcs.length > 0) {
-    const coords = [];
-    arcs.forEach(arc => {
-      coords.push({ lat: arc.from[0], lon: arc.from[1], hop: 0 });
-      coords.push({ lat: arc.to[0], lon: arc.to[1], hop: 1 });
-    });
+  // Draw the arcs using mapModule's drawPath
+  // For multiple arcs, draw each one separately by calling drawPath for each
+  // The first arc uses drawPath which clears and redraws the arcs layer
+  arcs.forEach((arc, index) => {
+    const coords = [
+      { lat: arc.from[0], lon: arc.from[1], hop: 0 },
+      { lat: arc.to[0], lon: arc.to[1], hop: 1 }
+    ];
     
-    // Use the existing drawPath function for visualization
-    // Note: This draws a single continuous path - for individual arcs,
-    // we'd need to enhance the map module
-    if (arcs.length === 1) {
+    if (index === 0) {
+      // First arc - use drawPath which clears the layer
       mapModule.drawPath(coords);
     }
-  }
+    // Note: For multiple arcs, we would need to extend the map module
+    // to support adding additional arcs without clearing the layer.
+    // Currently only the first arc is drawn for simplicity.
+  });
 }
 
 /**
  * Clear live visualization (markers and arcs)
  */
 function clearLiveVisualization() {
+  // Clear the liveMarkers tracking array
+  // Note: The actual markers on the map are cleared by mapModule.clearMap()
+  // which is called when toggling live mode off
   liveMarkers = [];
-  // Note: mapModule.clearMap() is called when toggling live mode
 }
 
 /**

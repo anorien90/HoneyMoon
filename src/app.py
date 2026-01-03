@@ -265,7 +265,7 @@ def live_connections():
     }
 
     # Try to determine the honeypot's location from config or first local IP
-    honeypot_ip = os.environ.get("HONEYPOT_IP", None)
+    honeypot_ip = os.environ.get("HONEYPOT_IP")
     if honeypot_ip:
         hp_node = engine.get_entry(honeypot_ip)
         if hp_node and hp_node.get("latitude") and hp_node.get("longitude"):
