@@ -56,6 +56,9 @@ class VectorStore:
     # Default embedding model
     DEFAULT_MODEL = "all-MiniLM-L6-v2"  # Small, fast, good for semantic similarity
     
+    # Connection timeout in seconds for remote Qdrant
+    DOCKER_CONNECTION_TIMEOUT = 5
+    
     def __init__(
         self,
         qdrant_host: Optional[str] = None,
@@ -104,7 +107,7 @@ class VectorStore:
             if not use_local:
                 # Try Docker container connection first
                 try:
-                    self._client = QdrantClient(host=self.qdrant_host, port=self.qdrant_port, timeout=5)
+                    self._client = QdrantClient(host=self.qdrant_host, port=self.qdrant_port, timeout=self.DOCKER_CONNECTION_TIMEOUT)
                     # Test connection by listing collections
                     self._client.get_collections()
                     logger.info("Connected to Qdrant Docker container at %s:%s", self.qdrant_host, self.qdrant_port)

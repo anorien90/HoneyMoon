@@ -8,6 +8,14 @@ import * as ui from './ui.js';
 const $ = id => document.getElementById(id);
 
 // ============================================
+// CONSTANTS
+// ============================================
+
+const MAX_MESSAGES_DISPLAY = 20;
+const DEFAULT_TASK_LIMIT = 50;
+const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
+
+// ============================================
 // AGENT STATUS
 // ============================================
 
@@ -278,7 +286,7 @@ function renderMessagesList(messages) {
   }
   
   const frag = document.createDocumentFragment();
-  messages.slice(0, 20).reverse().forEach(msg => {
+  messages.slice(0, MAX_MESSAGES_DISPLAY).reverse().forEach(msg => {
     const div = document.createElement('div');
     div.className = `py-1 border-b message-row message-${msg.message_type}`;
     
@@ -449,12 +457,12 @@ export function initAgentUI() {
   listAgentTasks();
   getAgentMessages();
   
-  // Auto-refresh every 30 seconds
+  // Auto-refresh
   setInterval(() => {
     refreshAgentStatus();
     listAgentTasks();
     getAgentMessages();
-  }, 30000);
+  }, AUTO_REFRESH_INTERVAL);
 }
 
 function showTaskDetailsModal(task) {

@@ -8,6 +8,15 @@ import * as ui from './ui.js';
 const $ = id => document.getElementById(id);
 
 // ============================================
+// CONSTANTS
+// ============================================
+
+const SUMMARY_TRUNCATE_LENGTH = 100;
+const DEFAULT_THREAT_LIMIT = 20;
+const DEFAULT_SEARCH_LIMIT = 10;
+const AUTO_REFRESH_INTERVAL = 60000; // 60 seconds
+
+// ============================================
 // STATUS
 // ============================================
 
@@ -331,7 +340,7 @@ function renderThreatAnalysesList(threats) {
         </div>
         <span class="muted small">${escapeHtml(threat.source_type || '')}</span>
       </div>
-      <div class="muted small">${escapeHtml(threat.summary?.substring(0, 100) || '')}${threat.summary?.length > 100 ? '...' : ''}</div>
+      <div class="muted small">${escapeHtml(threat.summary?.substring(0, SUMMARY_TRUNCATE_LENGTH) || '')}${threat.summary?.length > SUMMARY_TRUNCATE_LENGTH ? '...' : ''}</div>
       <div class="muted small">${time} • ${escapeHtml(threat.source_ip || '')}</div>
     `;
     frag.appendChild(div);
@@ -686,9 +695,9 @@ export function initAnalysisUI() {
   refreshAnalysisStatus();
   listThreatAnalyses();
   
-  // Auto-refresh every 60 seconds
+  // Auto-refresh
   setInterval(() => {
     refreshAnalysisStatus();
     listThreatAnalyses();
-  }, 60000);
+  }, AUTO_REFRESH_INTERVAL);
 }
