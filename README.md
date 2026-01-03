@@ -63,15 +63,21 @@ python -m src.app
 
 ### Using Docker Compose
 
-The included `docker-compose.yml` sets up a Cowrie honeypot for testing:
+The included `docker-compose.yml` sets up a Cowrie honeypot, Qdrant vector database, and Ollama LLM:
 
 ```bash
 # Set required environment variables
 export HOST_SSH_PORT=2222
 export COWRIE_PORT=2222
 
-# Start the honeypot
+# Start the honeypot and Qdrant (default services)
 docker compose up -d
+
+# Start with AI services (Ollama for LLM analysis)
+docker compose --profile ai up -d
+
+# After starting, pull the Granite model for AI analysis
+docker exec embedding ollama pull granite3.1-dense:8b
 ```
 
 ## Quick Start
@@ -154,7 +160,45 @@ HoneyMoon is configured through environment variables:
 
 HoneyMoon includes AI-powered threat analysis using local IBM Granite models and vector similarity search.
 
-### Installing Ollama and Granite
+### Option 1: Using Docker Compose (Recommended)
+
+The included `docker-compose.yml` provides an Ollama service for AI analysis:
+
+1. **Start the Ollama container with the AI profile:**
+   ```bash
+   # Start Ollama and Qdrant services
+   docker compose --profile ai up -d
+   ```
+
+2. **Pull the Granite model inside the container:**
+   ```bash
+   # Pull the recommended model
+   docker exec embedding ollama pull granite3.1-dense:8b
+   ```
+
+3. **Verify Ollama is running:**
+   ```bash
+   # Check available models
+   docker exec embedding ollama list
+   
+   # Test the API
+   curl http://localhost:11434/api/tags
+   ```
+
+> **Note:** The Ollama container is configured with GPU support. If you don't have a GPU, edit `docker-compose.yml` and remove the `deploy.resources.reservations.devices` section from the `embedding` service:
+>
+> ```yaml
+> # Remove this section from the embedding service if you don't have a GPU:
+> deploy:
+>   resources:
+>     reservations:
+>       devices:
+>         - driver: nvidia
+>           count: all
+>           capabilities: [gpu]
+> ```
+
+### Option 2: Installing Ollama Locally
 
 1. **Install Ollama:**
    ```bash
@@ -174,6 +218,25 @@ HoneyMoon includes AI-powered threat analysis using local IBM Granite models and
    ```bash
    ollama pull granite3.1-dense:8b
    ```
+
+### Troubleshooting Ollama
+
+If you see the warning `No supported LLM model found`, ensure that:
+
+1. The Ollama service is running and accessible at `http://localhost:11434`
+2. The Granite model has been pulled (run `ollama list` or `docker exec embedding ollama list` to check)
+3. The `OLLAMA_HOST` environment variable is set correctly if using a non-default host
+
+```bash
+# Check Ollama status
+curl http://localhost:11434/api/tags
+
+# Pull the model if missing (local installation)
+ollama pull granite3.1-dense:8b
+
+# Pull the model if missing (Docker - use the 'embedding' container name from docker-compose.yml)
+docker exec embedding ollama pull granite3.1-dense:8b
+```
 
 ### Using AI Analysis
 
