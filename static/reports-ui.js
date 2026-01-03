@@ -138,7 +138,7 @@ function renderReportsList(reports) {
 // ============================================
 
 /**
- * Export multiple reports as JSON
+ * Export multiple reports as JSON with concurrent API calls
  * @param {Array} reportsList - List of report objects to export
  */
 async function exportReports(reportsList) {
@@ -148,20 +148,23 @@ async function exportReports(reportsList) {
   }
   
   ui.setLoading(true, `Exporting ${reportsList.length} report${reportsList.length !== 1 ? 's' : ''}...`);
-  const fullReports = [];
   
-  for (const report of reportsList) {
-    if (report.session_id) {
-      try {
-        const res = await apiPost('/api/v1/llm/formal_report', { session_id: report.session_id }, { timeout: 180000 });
-        if (res.ok) {
-          fullReports.push(res.data);
-        }
-      } catch (err) {
-        console.error(`Failed to fetch report for session ${report.session_id}:`, err);
-      }
-    }
-  }
+  // Use Promise.allSettled for concurrent requests with error handling
+  const promises = reportsList
+    .filter(report => report.session_id)
+    .map(report => 
+      apiPost('/api/v1/llm/formal_report', { session_id: report.session_id }, { timeout: 180000 })
+        .then(res => res.ok ? res.data : null)
+        .catch(err => {
+          console.error(`Failed to fetch report for session ${report.session_id}:`, err);
+          return null;
+        })
+    );
+  
+  const results = await Promise.allSettled(promises);
+  const fullReports = results
+    .filter(result => result.status === 'fulfilled' && result.value)
+    .map(result => result.value);
   
   ui.setLoading(false);
   
@@ -181,11 +184,28 @@ function setupEventHandlers() {
   $('generateReportBtn')?.addEventListener('click', async () => {
     const sessionId = $('reportSessionId')?.value?.trim();
     if (sessionId) {
-      const report = await generateReportForSession(parseInt(sessionId, 10));
-      if (report) {
-        // Also import and call the modal display function
-        const { generateFormalReport: showReport } = await import('./analysis-ui.js');
-        showReport(parseInt(sessionId, 10));
+      // Generate report and show it directly without a second API call
+      ui.setLoading(true, 'Generating formal report...');
+      
+      try {
+        const res = await apiPost('/api/v1/llm/formal_report', { session_id: sessionId }, { timeout: 180000 });
+        ui.setLoading(false);
+        
+        if (!res.ok) {
+          ui.toast(res.error || 'Report generation failed');
+          return;
+        }
+        
+        ui.toast('Report generated successfully');
+        await refreshReportsList();
+        
+        // Import and show the report modal with the generated data
+        const { showFormalReportModal } = await import('./analysis-ui.js');
+        showFormalReportModal(res.data, parseInt(sessionId, 10));
+      } catch (err) {
+        ui.setLoading(false);
+        console.error('Report generation failed:', err);
+        ui.toast('Report generation failed');
       }
     }
   });
@@ -210,9 +230,26 @@ function setupEventHandlers() {
     if (reportRow?.dataset.sessionId) {
       const sessionId = parseInt(reportRow.dataset.sessionId, 10);
       
-      // Import and use the generateFormalReport function which shows the modal
-      const { generateFormalReport: showReport } = await import('./analysis-ui.js');
-      showReport(sessionId);
+      // Fetch and display the report (cached on backend, so efficient)
+      ui.setLoading(true, 'Loading report...');
+      
+      try {
+        const res = await apiPost('/api/v1/llm/formal_report', { session_id: sessionId }, { timeout: 180000 });
+        ui.setLoading(false);
+        
+        if (!res.ok) {
+          ui.toast(res.error || 'Failed to load report');
+          return;
+        }
+        
+        // Import and show the report modal
+        const { showFormalReportModal } = await import('./analysis-ui.js');
+        showFormalReportModal(res.data, sessionId);
+      } catch (err) {
+        ui.setLoading(false);
+        console.error('Failed to load report:', err);
+        ui.toast('Failed to load report');
+      }
     }
   });
 }

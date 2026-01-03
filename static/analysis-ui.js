@@ -380,7 +380,7 @@ function showAnalysisResultModal(analysis, title) {
   });
 }
 
-function showFormalReportModal(report, sessionId) {
+export function showFormalReportModal(report, sessionId) {
   // Check if we have a structured report or raw text
   if (report.error) {
     const html = `<div class="muted">Report generation failed: ${escapeHtml(report.error || 'Unknown error')}</div>`;
