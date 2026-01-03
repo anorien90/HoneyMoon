@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.entry import Base, NetworkNode, Organization, AnalysisSession, PathHop, WebAccess
+from src.entry import Base, NetworkNode, Organization, AnalysisSession, PathHop, WebAccess, ISP, OutgoingConnection
 from src.honeypot_models import HoneypotSession, HoneypotCommand, HoneypotFile, HoneypotNetworkFlow
 
 
@@ -188,6 +188,141 @@ class TestOrganizationMethods:
             results = engine.search_organizations(query="Exact Match Org", fuzzy=False, limit=10)
             
             assert len(results) == 1
+
+
+class TestISPMethods:
+    """Tests for ISP-related methods."""
+
+    @pytest.fixture
+    def engine(self, temp_dir, mock_nmap):
+        """Create a ForensicEngine instance for testing."""
+        with patch.dict(os.environ, {
+            "HONEY_AUTO_INGEST": "false",
+            "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
+            "HONEY_DATA_DIR": temp_dir
+        }):
+            from src.forensic_engine import ForensicEngine
+            engine = ForensicEngine(
+                db_path="sqlite:///:memory:",
+                honeypot_data_dir=temp_dir,
+                honey_auto_ingest=False,
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
+            )
+            return engine
+
+    def test_get_or_create_isp_new(self, engine):
+        """Test creating a new ISP."""
+        isp = engine.get_or_create_isp("New Test ISP", asn="AS12345")
+        
+        assert isp is not None
+        assert isp.name == "New Test ISP"
+        assert isp.name_normalized == "new test isp"
+        assert isp.asn == "AS12345"
+
+    def test_get_or_create_isp_existing(self, engine):
+        """Test getting an existing ISP."""
+        # Create first
+        isp1 = engine.get_or_create_isp("Existing ISP")
+        # Get again
+        isp2 = engine.get_or_create_isp("Existing ISP")
+        
+        assert isp1.id == isp2.id
+
+    def test_get_or_create_isp_empty_name(self, engine):
+        """Test with empty ISP name."""
+        isp = engine.get_or_create_isp("")
+        assert isp is None
+
+    def test_get_or_create_isp_none_name(self, engine):
+        """Test with None ISP name."""
+        isp = engine.get_or_create_isp(None)
+        assert isp is None
+
+    def test_search_isps_empty_query(self, engine):
+        """Test searching ISPs with empty query."""
+        engine.get_or_create_isp("Test ISP 1", asn="AS111")
+        engine.get_or_create_isp("Test ISP 2", asn="AS222")
+        
+        results = engine.search_isps(query="", limit=10)
+        
+        assert len(results) == 2
+
+    def test_search_isps_fuzzy(self, engine):
+        """Test fuzzy search for ISPs."""
+        engine.get_or_create_isp("Google Fiber", asn="AS15169")
+        engine.get_or_create_isp("Comcast Cable", asn="AS7922")
+        
+        results = engine.search_isps(query="goo", fuzzy=True, limit=10)
+        
+        assert len(results) == 1
+        assert "Google" in results[0]["name"]
+
+    def test_search_isps_by_asn(self, engine):
+        """Test search for ISPs by ASN."""
+        engine.get_or_create_isp("Google Fiber", asn="AS15169")
+        engine.get_or_create_isp("Comcast Cable", asn="AS7922")
+        
+        results = engine.search_isps(query="AS15169", fuzzy=True, limit=10)
+        
+        assert len(results) == 1
+        assert results[0]["asn"] == "AS15169"
+
+
+class TestOutgoingConnectionMethods:
+    """Tests for outgoing connection methods."""
+
+    @pytest.fixture
+    def engine(self, temp_dir, mock_nmap):
+        """Create a ForensicEngine instance for testing."""
+        with patch.dict(os.environ, {
+            "HONEY_AUTO_INGEST": "false",
+            "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
+            "HONEY_DATA_DIR": temp_dir
+        }):
+            from src.forensic_engine import ForensicEngine
+            engine = ForensicEngine(
+                db_path="sqlite:///:memory:",
+                honeypot_data_dir=temp_dir,
+                honey_auto_ingest=False,
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
+            )
+            return engine
+
+    def test_get_outgoing_connections_empty(self, engine):
+        """Test getting outgoing connections when none exist."""
+        connections = engine.get_outgoing_connections()
+        assert connections == []
+
+    def test_get_outgoing_connections(self, engine):
+        """Test getting outgoing connections."""
+        # Create some connections directly
+        conn1 = OutgoingConnection(remote_addr="8.8.8.8", remote_port=443, proto="tcp", direction="outgoing")
+        conn2 = OutgoingConnection(remote_addr="1.1.1.1", remote_port=53, proto="udp", direction="outgoing")
+        engine.db.add_all([conn1, conn2])
+        engine.db.commit()
+        
+        connections = engine.get_outgoing_connections(limit=10)
+        
+        assert len(connections) == 2
+
+    def test_get_outgoing_connections_filter_direction(self, engine):
+        """Test filtering outgoing connections by direction."""
+        conn1 = OutgoingConnection(remote_addr="8.8.8.8", remote_port=443, proto="tcp", direction="outgoing")
+        conn2 = OutgoingConnection(remote_addr="192.168.1.1", remote_port=80, proto="tcp", direction="internal")
+        engine.db.add_all([conn1, conn2])
+        engine.db.commit()
+        
+        outgoing = engine.get_outgoing_connections(direction="outgoing")
+        internal = engine.get_outgoing_connections(direction="internal")
+        
+        assert len(outgoing) == 1
+        assert outgoing[0]["remote_addr"] == "8.8.8.8"
+        assert len(internal) == 1
+        assert internal[0]["remote_addr"] == "192.168.1.1"
 
 
 class TestNodeMethods:

@@ -9,12 +9,14 @@ except Exception:
     HoneypotNetworkFlow = None
 
 try:
-    from src.entry import NetworkNode, Organization, WebAccess, AnalysisSession
+    from src.entry import NetworkNode, Organization, WebAccess, AnalysisSession, ISP, OutgoingConnection
 except Exception:
     NetworkNode = None
     Organization = None
     WebAccess = None
     AnalysisSession = None
+    ISP = None
+    OutgoingConnection = None
 
 TEMPLATE_DIR = os.environ.get("IPMAP_TEMPLATES", "/home/anorien/lib/HoneyMoon/templates")
 STATIC_DIR = os.environ.get("IPMAP_STATIC", "/home/anorien/lib/HoneyMoon/static")
@@ -393,6 +395,140 @@ def refresh_organization():
 
 
 # -------------------------
+# ISP endpoints
+# -------------------------
+@app.route('/api/v1/isp')
+def isp():
+    """Get ISP by id or by IP."""
+    ip = request.args.get('ip')
+    isp_id = request.args.get('id')
+    if not ip and not isp_id:
+        return jsonify({"error": "Provide an ip or id query parameter"}), 400
+
+    if ip:
+        # Get ISP through the network node
+        node = engine.db.query(NetworkNode).filter_by(ip=ip).first() if NetworkNode else None
+        if not node or not node.isp_obj:
+            return jsonify({"error": "ISP not found for IP"}), 404
+        return jsonify({"isp": node.isp_obj.dict()}), 200
+
+    try:
+        iid = int(isp_id)
+    except Exception:
+        return jsonify({"error": "Invalid ISP id"}), 400
+
+    if ISP is None:
+        return jsonify({"error": "ISP model not available"}), 500
+    
+    isp = engine.db.query(ISP).filter_by(id=iid).first()
+    if not isp:
+        return jsonify({"error": "ISP not found for id"}), 404
+    return jsonify({"isp": isp.dict()}), 200
+
+
+@app.route('/api/v1/isp/search')
+def isp_search():
+    """Search ISPs by name or ASN."""
+    q = request.args.get('q', '') or ''
+    fuzzy = request.args.get('fuzzy', '0').lower() in ("1", "true", "yes", "on")
+    try:
+        limit = int(request.args.get('limit', 100))
+    except Exception:
+        limit = 100
+
+    try:
+        results = engine.search_isps(query=q, fuzzy=fuzzy, limit=limit)
+        return jsonify({"type": "isp", "query": q, "fuzzy": fuzzy, "results": results}), 200
+    except Exception as e:
+        return jsonify({"error": f"ISP search failed: {e}"}), 500
+
+
+# -------------------------
+# Outgoing connections endpoints
+# -------------------------
+@app.route('/api/v1/outgoing/connections')
+def outgoing_connections():
+    """Get recent outgoing network connections."""
+    try:
+        limit = int(request.args.get('limit', 100))
+        limit = max(1, min(500, limit))
+    except Exception:
+        limit = 100
+
+    direction = request.args.get('direction')  # 'outgoing', 'internal', or None for all
+    
+    try:
+        connections = engine.get_outgoing_connections(limit=limit, direction=direction)
+        return jsonify({"connections": connections, "count": len(connections)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get outgoing connections: {e}"}), 500
+
+
+@app.route('/api/v1/outgoing/live')
+def outgoing_live():
+    """
+    Get recent outgoing connections from the last X minutes.
+    Query params:
+      - minutes: time window in minutes (default: 15, max: 1440)
+      - limit: max results (default: 100)
+      - direction: filter by direction ('outgoing', 'internal', or None for all)
+    """
+    from datetime import datetime, timezone, timedelta
+
+    try:
+        minutes = int(request.args.get('minutes', 15))
+        minutes = max(1, min(1440, minutes))
+    except Exception:
+        minutes = 15
+
+    try:
+        limit = int(request.args.get('limit', 100))
+        limit = max(1, min(500, limit))
+    except Exception:
+        limit = 100
+
+    direction = request.args.get('direction')
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+
+    result = {
+        "minutes": minutes,
+        "cutoff": cutoff.isoformat(),
+        "connections": []
+    }
+
+    if OutgoingConnection is not None:
+        try:
+            query = engine.db.query(OutgoingConnection).filter(
+                OutgoingConnection.timestamp >= cutoff
+            )
+            if direction:
+                query = query.filter(OutgoingConnection.direction == direction)
+            
+            rows = query.order_by(OutgoingConnection.timestamp.desc()).limit(limit).all()
+
+            for conn in rows:
+                conn_dict = conn.dict()
+                # Enrich remote_addr with geolocation if available
+                if conn.remote_addr:
+                    node = engine.get_entry(conn.remote_addr)
+                    if node:
+                        conn_dict["remote_node"] = {
+                            "ip": node.get("ip"),
+                            "latitude": node.get("latitude"),
+                            "longitude": node.get("longitude"),
+                            "city": node.get("city"),
+                            "country": node.get("country"),
+                            "organization": node.get("organization"),
+                            "isp": node.get("isp")
+                        }
+                result["connections"].append(conn_dict)
+        except Exception as e:
+            result["connections_error"] = str(e)
+
+    return jsonify(result), 200
+
+
+# -------------------------
 # New DB endpoints for "Database" tab
 # -------------------------
 @app.route('/api/v1/db/search')
@@ -480,6 +616,25 @@ def db_search():
                 )
             rows = qobj.order_by(HoneypotNetworkFlow.start_ts.desc()).limit(limit).all()
             return jsonify({"type": "flows", "query": q, "results": [r.dict() for r in rows]}), 200
+
+        if typ in ('isp', 'isps'):
+            results = engine.search_isps(query=q, fuzzy=fuzzy, limit=limit)
+            return jsonify({"type": "isp", "query": q, "results": results}), 200
+
+        if typ in ('outgoing', 'outgoing_connections'):
+            if OutgoingConnection is None:
+                return jsonify({"error": "OutgoingConnection model not available"}), 500
+            qlike = f"%{q}%"
+            qobj = engine.db.query(OutgoingConnection)
+            if q:
+                qobj = qobj.filter(
+                    (OutgoingConnection.local_addr.ilike(qlike)) |
+                    (OutgoingConnection.remote_addr.ilike(qlike)) |
+                    (OutgoingConnection.process_name.ilike(qlike)) |
+                    (OutgoingConnection.status.ilike(qlike))
+                )
+            rows = qobj.order_by(OutgoingConnection.timestamp.desc()).limit(limit).all()
+            return jsonify({"type": "outgoing_connections", "query": q, "results": [r.dict() for r in rows]}), 200
 
         return jsonify({"error": "Unknown type parameter"}), 400
     except Exception as e:

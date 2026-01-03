@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 Base = declarative_base()
 
+
 class Organization(Base):
     """
     Canonical organization table so we can associate many IPs with one Organization record.
@@ -39,6 +40,44 @@ class Organization(Base):
             "extra_data": self.extra_data
         }
 
+
+class ISP(Base):
+    """
+    Internet Service Provider table to associate many IPs with one ISP record.
+    Separate from Organization to distinguish between the ISP (network provider) and
+    the organization that owns the IP allocation.
+    - name: human-friendly display name
+    - name_normalized: lowercase/stripped name used for uniqueness lookups
+    - asn: Autonomous System Number (e.g., "AS15169")
+    - extra_data: any other enrichment data
+    """
+    __tablename__ = 'isps'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    name_normalized = Column(String, nullable=False, unique=True)
+    asn = Column(String, nullable=True)
+    abuse_email = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    extra_data = Column(JSON, default=dict)
+
+    # Relationship: ISP.nodes <-> NetworkNode.isp_obj
+    nodes = relationship("NetworkNode", back_populates="isp_obj", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<ISP(id={self.id}, name={self.name}, asn={self.asn})>"
+
+    def dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "name_normalized": self.name_normalized,
+            "asn": self.asn,
+            "abuse_email": self.abuse_email,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "extra_data": self.extra_data
+        }
+
 class NetworkNode(Base):
     """
     Stores unique data for any IP encountered (Hops or Targets).
@@ -51,9 +90,12 @@ class NetworkNode(Base):
     organization = Column(String, nullable=True)
     # canonical FK to Organization table
     organization_id = Column(Integer, ForeignKey('organizations.id'), nullable=True)
+    # legacy/denormalized isp string (kept for compatibility)
+    isp = Column(String)
+    # canonical FK to ISP table
+    isp_id = Column(Integer, ForeignKey('isps.id'), nullable=True)
 
     hostname = Column(String)
-    isp = Column(String)
     asn = Column(String)
     country = Column(String)
     city = Column(String)
@@ -71,6 +113,8 @@ class NetworkNode(Base):
     web_accesses = relationship("WebAccess", back_populates="node", cascade="all, delete-orphan")
     # Relationship: NetworkNode.organization_obj <-> Organization.nodes
     organization_obj = relationship("Organization", back_populates="nodes")
+    # Relationship: NetworkNode.isp_obj <-> ISP.nodes
+    isp_obj = relationship("ISP", back_populates="nodes")
 
     def __repr__(self):
         return f"<NetworkNode(ip={self.ip}, hostname={self.hostname}, organization={self.organization})>"
@@ -83,6 +127,13 @@ class NetworkNode(Base):
             except Exception:
                 org_obj = {"id": self.organization_obj.id, "name": self.organization_obj.name}
 
+        isp_obj_dict = None
+        if self.isp_obj:
+            try:
+                isp_obj_dict = self.isp_obj.dict()
+            except Exception:
+                isp_obj_dict = {"id": self.isp_obj.id, "name": self.isp_obj.name}
+
         return {
             "ip": self.ip,
             "hostname": self.hostname,
@@ -90,7 +141,10 @@ class NetworkNode(Base):
             "organization": self.organization,
             "organization_id": self.organization_id,
             "organization_obj": org_obj,
+            # keep denormalized isp for backwards compatibility
             "isp": self.isp,
+            "isp_id": self.isp_id,
+            "isp_obj": isp_obj_dict,
             "asn": self.asn,
             "country": self.country,
             "city": self.city,
@@ -211,4 +265,49 @@ class WebAccess(Base):
             "upstream_addr": self.upstream_addr,
             "request_time": self.request_time,
             "raw": self.raw
+        }
+
+
+class OutgoingConnection(Base):
+    """
+    Stores outgoing network connections observed from the local system.
+    Useful for monitoring what connections are being made FROM the honeypot/server
+    TO external destinations.
+    """
+    __tablename__ = 'outgoing_connections'
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    local_addr = Column(String, nullable=True)
+    local_port = Column(Integer, nullable=True)
+    remote_addr = Column(String, nullable=True)
+    remote_port = Column(Integer, nullable=True)
+    proto = Column(String, nullable=True)  # tcp, udp, etc.
+    status = Column(String, nullable=True)  # ESTABLISHED, TIME_WAIT, etc.
+    pid = Column(Integer, nullable=True)
+    process_name = Column(String, nullable=True)
+    direction = Column(String, default="outgoing")  # 'outgoing' or 'incoming' for completeness
+    bytes_sent = Column(Integer, nullable=True)
+    bytes_recv = Column(Integer, nullable=True)
+    extra_data = Column(JSON, default=dict)
+
+    def __repr__(self):
+        return f"<OutgoingConnection(id={self.id}, local={self.local_addr}:{self.local_port} -> remote={self.remote_addr}:{self.remote_port})>"
+
+    def dict(self):
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "local_addr": self.local_addr,
+            "local_port": self.local_port,
+            "remote_addr": self.remote_addr,
+            "remote_port": self.remote_port,
+            "proto": self.proto,
+            "status": self.status,
+            "pid": self.pid,
+            "process_name": self.process_name,
+            "direction": self.direction,
+            "bytes_sent": self.bytes_sent,
+            "bytes_recv": self.bytes_recv,
+            "extra_data": self.extra_data
         }
