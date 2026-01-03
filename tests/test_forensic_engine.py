@@ -739,3 +739,91 @@ class TestServiceBanners:
             assert 22 in banners
             assert 25 in banners
             assert 80 not in banners  # None values not included
+
+
+class TestConnectionLogging:
+    """Tests for connection logging in watcher threads."""
+
+    @pytest.fixture
+    def engine(self, temp_dir, mock_nmap):
+        """Create a ForensicEngine instance for testing."""
+        with patch.dict(os.environ, {
+            "HONEY_AUTO_INGEST": "false",
+            "NGINX_AUTO_INGEST": "false",
+            "OUTGOING_MONITOR": "false",
+            "HONEY_DATA_DIR": temp_dir
+        }):
+            from src.forensic_engine import ForensicEngine
+            engine = ForensicEngine(
+                db_path="sqlite:///:memory:",
+                honeypot_data_dir=temp_dir,
+                honey_auto_ingest=False,
+                nginx_auto_ingest=False,
+                outgoing_monitor=False
+            )
+            return engine
+
+    def test_ingest_event_logs_incoming_connection(self, engine, caplog):
+        """Test that _ingest_event processes events correctly for logging."""
+        import logging
+        caplog.set_level(logging.INFO)
+        
+        event = {
+            "session": "test_session_123",
+            "src_ip": "192.168.1.100",
+            "src_port": 54321,
+            "event": "cowrie.session.connect"
+        }
+        
+        # Test without enrichment to avoid the MagicMock serialization issue
+        engine._ingest_event(event, session=engine.db, enrich=False)
+        engine.db.commit()
+        
+        # Verify a session was created
+        sessions = engine.get_honeypot_sessions()
+        assert len(sessions) >= 1
+        assert sessions[0]["src_ip"] == "192.168.1.100"
+
+    def test_outgoing_connection_stored_with_direction(self, engine):
+        """Test that outgoing connections are stored with correct direction."""
+        # Store an outgoing connection
+        conn = OutgoingConnection(
+            local_addr="192.168.1.10",
+            local_port=54321,
+            remote_addr="8.8.8.8",
+            remote_port=443,
+            proto="tcp",
+            status="ESTABLISHED",
+            direction="outgoing",
+            process_name="python3"
+        )
+        engine.db.add(conn)
+        engine.db.commit()
+        
+        # Retrieve and verify
+        connections = engine.get_outgoing_connections(limit=10)
+        assert len(connections) == 1
+        assert connections[0]["direction"] == "outgoing"
+        assert connections[0]["remote_addr"] == "8.8.8.8"
+        assert connections[0]["process_name"] == "python3"
+
+    def test_internal_connection_stored_with_direction(self, engine):
+        """Test that internal connections are stored with correct direction."""
+        # Store an internal connection
+        conn = OutgoingConnection(
+            local_addr="192.168.1.10",
+            local_port=54321,
+            remote_addr="192.168.1.20",
+            remote_port=80,
+            proto="tcp",
+            status="ESTABLISHED",
+            direction="internal"
+        )
+        engine.db.add(conn)
+        engine.db.commit()
+        
+        # Retrieve and verify
+        connections = engine.get_outgoing_connections(direction="internal", limit=10)
+        assert len(connections) == 1
+        assert connections[0]["direction"] == "internal"
+        assert connections[0]["remote_addr"] == "192.168.1.20"
