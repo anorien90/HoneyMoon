@@ -16,6 +16,10 @@
 - **📡 PCAP Analysis** - Ingest and analyze network captures for flow data
 - **🏢 Organization Intelligence** - RDAP/WHOIS lookups with company registry enrichment
 - **📋 Web Access Logging** - Nginx JSON log ingestion and correlation with network intelligence
+- **🤖 AI-Powered Threat Analysis** - Local IBM Granite LLM integration via Ollama for session analysis and threat extraction
+- **🔎 Similarity Search** - Vector embeddings with Qdrant for finding similar attacks and attackers
+- **🎯 Counter-Measure Planning** - LLM-generated countermeasure recommendations
+- **📦 Attacker Clustering** - Automatic grouping of related attacks and threat actors
 
 ## Table of Contents
 
@@ -23,6 +27,7 @@
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
+- [AI Analysis Setup](#ai-analysis-setup)
 - [Honeypot Setup](#honeypot-setup)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -35,6 +40,8 @@
 - Python 3.9+
 - Docker & Docker Compose (optional, for honeypot deployment)
 - nmap (optional, for deep scanning)
+- Ollama (optional, for AI threat analysis)
+- Qdrant (optional, for similarity search)
 
 ### Using pip
 
@@ -128,6 +135,85 @@ HoneyMoon is configured through environment variables:
 | `NGINX_AUTO_INGEST` | `true` | Enable automatic nginx log ingestion |
 | `NGINX_LOG_PATH` | `./data/access.json` | Path to nginx JSON access log |
 | `NGINX_INGEST_INTERVAL` | `30` | Log polling interval (seconds) |
+
+### AI Analysis Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_ENABLED` | `true` | Enable LLM-based threat analysis |
+| `LLM_MODEL` | `granite3.1-dense:8b` | Ollama model to use for analysis |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+| `VECTOR_STORE_ENABLED` | `true` | Enable vector similarity search |
+| `QDRANT_USE_LOCAL` | `true` | Use local Qdrant storage (vs remote server) |
+| `QDRANT_PATH` | `./data/qdrant` | Path for local Qdrant data |
+| `QDRANT_HOST` | `localhost` | Qdrant server host (if not local) |
+| `QDRANT_PORT` | `6333` | Qdrant server port |
+| `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings |
+
+## AI Analysis Setup
+
+HoneyMoon includes AI-powered threat analysis using local IBM Granite models and vector similarity search.
+
+### Installing Ollama and Granite
+
+1. **Install Ollama:**
+   ```bash
+   # Linux
+   curl -fsSL https://ollama.com/install.sh | sh
+   
+   # macOS
+   brew install ollama
+   ```
+
+2. **Start Ollama:**
+   ```bash
+   ollama serve
+   ```
+
+3. **Pull the Granite model:**
+   ```bash
+   ollama pull granite3.1-dense:8b
+   ```
+
+### Using AI Analysis
+
+Once Ollama is running with Granite, the AI features are automatically available:
+
+- **Session Analysis**: Analyze honeypot sessions for threat type, severity, and MITRE ATT&CK mapping
+- **Counter-Measure Planning**: Get actionable recommendations to address identified threats
+- **Artifact Examination**: Analyze captured malware and scripts
+- **Threat Unification**: Create unified threat profiles from multiple related sessions
+
+### Example: Analyzing a Session
+
+```bash
+# Analyze a honeypot session
+curl -X POST http://localhost:5000/api/v1/llm/analyze/session \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": 1}'
+
+# Get countermeasure recommendations
+curl -X POST http://localhost:5000/api/v1/llm/countermeasure \
+  -H "Content-Type: application/json" \
+  -d '{"threat_analysis_id": 1}'
+```
+
+### Vector Similarity Search
+
+The vector store enables finding similar attacks and attackers:
+
+```bash
+# Search for similar sessions
+curl "http://localhost:5000/api/v1/vector/search/sessions?q=ssh+brute+force"
+
+# Find similar attackers to a specific IP
+curl "http://localhost:5000/api/v1/similar/attackers?ip=10.0.0.1"
+
+# Create a cluster of related attacks
+curl -X POST http://localhost:5000/api/v1/cluster \
+  -H "Content-Type: application/json" \
+  -d '{"session_ids": [1, 2, 3], "name": "SSH Botnet Campaign"}'
+```
 
 ## API Reference
 
@@ -256,6 +342,148 @@ GET /api/v1/accesses?ip=<ip>&limit=<int>
 GET /api/v1/health
 ```
 
+### AI Analysis Endpoints
+
+#### Get LLM Status
+```http
+GET /api/v1/llm/status
+```
+
+#### Analyze Honeypot Session
+```http
+POST /api/v1/llm/analyze/session
+Content-Type: application/json
+
+{"session_id": 1, "save": true}
+```
+
+**Response:**
+```json
+{
+  "analyzed": true,
+  "threat_type": "SSH Brute Force",
+  "severity": "high",
+  "confidence": 0.9,
+  "summary": "Automated SSH brute force attack targeting root account...",
+  "tactics": ["Initial Access", "Credential Access"],
+  "techniques": ["T1110 - Brute Force"],
+  "indicators": ["Multiple failed login attempts", "Common password list used"],
+  "recommendations": ["Block source IP", "Implement fail2ban"]
+}
+```
+
+#### Analyze Web Access Logs
+```http
+POST /api/v1/llm/analyze/accesses
+Content-Type: application/json
+
+{"ip": "10.0.0.1", "limit": 100, "save": true}
+```
+
+#### Analyze Connections
+```http
+POST /api/v1/llm/analyze/connections
+Content-Type: application/json
+
+{"direction": "outgoing", "limit": 100, "save": true}
+```
+
+#### Generate Countermeasure Plan
+```http
+POST /api/v1/llm/countermeasure
+Content-Type: application/json
+
+{"threat_analysis_id": 1, "context": {"source_ip": "10.0.0.1"}}
+```
+
+#### Examine Artifact
+```http
+POST /api/v1/llm/examine/artifact
+Content-Type: application/json
+
+{"artifact_name": "abc123_malware.sh"}
+```
+
+#### Unify Threat Profiles
+```http
+POST /api/v1/llm/unify
+Content-Type: application/json
+
+{"session_ids": [1, 2, 3]}
+```
+
+### Vector Search Endpoints
+
+#### Get Vector Store Status
+```http
+GET /api/v1/vector/status
+```
+
+#### Index Session
+```http
+POST /api/v1/vector/index/session
+Content-Type: application/json
+
+{"session_id": 1}
+```
+
+#### Index Node
+```http
+POST /api/v1/vector/index/node
+Content-Type: application/json
+
+{"ip": "8.8.8.8"}
+```
+
+#### Search Similar Sessions
+```http
+GET /api/v1/vector/search/sessions?q=<query>&session_id=<id>&limit=<int>
+```
+
+#### Search Similar Nodes
+```http
+GET /api/v1/vector/search/nodes?q=<query>&ip=<ip>&limit=<int>
+```
+
+#### Search Similar Threats
+```http
+GET /api/v1/vector/search/threats?q=<query>&limit=<int>
+```
+
+### Threat Analysis Endpoints
+
+#### List Threats
+```http
+GET /api/v1/threats?type=<session|access|connection>&limit=<int>
+```
+
+#### Get Threat
+```http
+GET /api/v1/threat?id=<int>
+```
+
+### Cluster Endpoints
+
+#### List Clusters
+```http
+GET /api/v1/clusters?limit=<int>
+```
+
+#### Get or Create Cluster
+```http
+GET /api/v1/cluster?id=<int>
+
+POST /api/v1/cluster
+Content-Type: application/json
+
+{"session_ids": [1, 2, 3], "name": "Campaign Name"}
+```
+
+#### Find Similar Attackers
+```http
+GET /api/v1/similar/attackers?ip=<ip>&threshold=<float>&limit=<int>
+```
+
 ## Honeypot Setup
 
 ### Cowrie Integration
@@ -322,6 +550,8 @@ HoneyMoon/
 │   ├── forensic_engine.py     # Core analysis engine
 │   ├── forensic_extension.py  # Service fingerprinting helpers
 │   ├── honeypot_models.py     # Honeypot-related models
+│   ├── vector_store.py        # Qdrant vector storage for similarity search
+│   ├── llm_analyzer.py        # IBM Granite LLM integration via Ollama
 │   ├── ingest_cowrie_structured.py  # Cowrie log ingestion CLI
 │   └── pcap_ingest.py         # PCAP ingestion CLI
 ├── templates/
@@ -335,6 +565,7 @@ HoneyMoon/
 │   ├── db-ui.js               # Database explorer UI
 │   └── styles.css             # Application styles
 ├── data/                      # Data files (gitignored)
+│   └── qdrant/                # Qdrant vector database storage
 ├── docker-compose.yml         # Honeypot deployment
 ├── requirements.txt           # Python dependencies
 └── README.md
@@ -351,6 +582,8 @@ HoneyMoon/
 - **HoneypotCommand** - Commands executed in honeypot sessions
 - **HoneypotFile** - Files downloaded/uploaded in honeypot sessions
 - **HoneypotNetworkFlow** - Network flow data from PCAP analysis
+- **ThreatAnalysis** - LLM-generated threat analyses with MITRE ATT&CK mapping
+- **AttackerCluster** - Clusters of related attackers/campaigns
 
 ### Data Sources
 
@@ -362,6 +595,8 @@ HoneyMoon enriches IP data from multiple sources:
 - **ip-api.com** - Fallback geolocation API
 - **OpenCorporates** - Company registry lookups
 - **Tor Exit List** - Tor exit node detection
+- **IBM Granite LLM** - Local AI threat analysis (via Ollama)
+- **Qdrant** - Vector similarity search for attack correlation
 
 ## Development
 

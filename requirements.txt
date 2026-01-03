@@ -7,3 +7,6 @@ scapy
 python-nmap
 maxminddb
 psutil
+sentence-transformers
+qdrant-client
+ollama
