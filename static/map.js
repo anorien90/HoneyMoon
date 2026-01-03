@@ -137,7 +137,8 @@ export function formatPopup(node) {
 const MARKER_STYLES = {
   first: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
   last: { stroke: '#0f172a', fill: '#2563eb', radius: 10 },
-  middle: { stroke: '#7a2e00', fill: '#ff7b00', radius: 7 }
+  middle: { stroke: '#7a2e00', fill: '#ff7b00', radius: 7 },
+  outgoing: { stroke: '#0f172a', fill: '#10b981', radius: 8 }  // Green for outgoing connections
 };
 
 export function addMarkerForNode(node, role = 'middle') {
