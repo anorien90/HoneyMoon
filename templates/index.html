@@ -108,6 +108,9 @@
             <div id="liveControls" class="hidden" style="display: flex; gap: 0.25rem; align-items: center;">
               <input id="liveMinutes" type="number" value="15" min="1" max="1440" style="width: 50px;" title="Time window in minutes" aria-label="Live view time window in minutes" />
               <span class="small muted">min</span>
+              <label class="small" style="display: flex; align-items: center; gap: 0.25rem;" title="Show outgoing connections from this system">
+                <input id="liveOutgoingToggle" type="checkbox" /> Outgoing
+              </label>
               <button id="liveRefreshBtn" class="small" title="Refresh live data">↻</button>
               <span class="small muted">(<span id="liveCount">0</span>)</span>
               <span id="liveStatus" class="small muted"></span>

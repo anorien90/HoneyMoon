@@ -8,13 +8,15 @@ import { escapeHtml } from './util.js';
 
 // Live view state
 let isLiveMode = false;
+let showOutgoing = false;
 let liveRefreshInterval = null;
 let currentMinutes = 15;
 let liveMarkers = [];
 let liveArcsLayer = null;
 
-// Storage key for persistence
+// Storage keys for persistence
 const STORAGE_KEY = 'honeymoon.live_view.minutes';
+const STORAGE_KEY_OUTGOING = 'honeymoon.live_view.outgoing';
 
 // DOM references
 const $ = id => document.getElementById(id);
@@ -36,10 +38,26 @@ export function initLiveView() {
     // Ignore localStorage errors
   }
 
+  // Load saved outgoing preference
+  try {
+    const savedOutgoing = localStorage.getItem(STORAGE_KEY_OUTGOING);
+    if (savedOutgoing === '1' || savedOutgoing === 'true') {
+      showOutgoing = true;
+    }
+  } catch (e) {
+    // Ignore localStorage errors
+  }
+
   // Set initial value in the input
   const minutesInput = $('liveMinutes');
   if (minutesInput) {
     minutesInput.value = currentMinutes;
+  }
+
+  // Set initial value for outgoing toggle
+  const outgoingToggle = $('liveOutgoingToggle');
+  if (outgoingToggle) {
+    outgoingToggle.checked = showOutgoing;
   }
 
   // Set up event listeners
@@ -72,6 +90,23 @@ function setupEventListeners() {
           // Refresh immediately with new time window
           fetchAndRenderLiveData();
         }
+      }
+    });
+  }
+
+  // Outgoing toggle checkbox
+  const outgoingToggle = $('liveOutgoingToggle');
+  if (outgoingToggle) {
+    outgoingToggle.addEventListener('change', (e) => {
+      showOutgoing = e.target.checked;
+      try {
+        localStorage.setItem(STORAGE_KEY_OUTGOING, showOutgoing ? '1' : '0');
+      } catch (e) {
+        // Ignore
+      }
+      if (isLiveMode) {
+        // Refresh immediately with new setting
+        fetchAndRenderLiveData();
       }
     });
   }
@@ -170,23 +205,42 @@ async function fetchAndRenderLiveData() {
   }
   
   try {
-    const res = await apiGet(`/api/v1/live/connections?minutes=${currentMinutes}&limit=100`, {
+    // Fetch incoming connections (honeypot sessions and flows)
+    const incomingRes = await apiGet(`/api/v1/live/connections?minutes=${currentMinutes}&limit=100`, {
       timeout: 30000,
       retries: 1
     });
     
-    if (!res.ok) {
+    if (!incomingRes.ok) {
       if (liveStatus) {
-        liveStatus.textContent = `Error: ${res.error || 'Failed to fetch'}`;
+        liveStatus.textContent = `Error: ${incomingRes.error || 'Failed to fetch'}`;
       }
       return;
     }
     
-    const data = res.data;
-    renderLiveData(data);
+    const incomingData = incomingRes.data;
+    
+    // Fetch outgoing connections if toggle is enabled
+    let outgoingData = { connections: [] };
+    if (showOutgoing) {
+      const outgoingRes = await apiGet(`/api/v1/outgoing/live?minutes=${currentMinutes}&limit=100`, {
+        timeout: 30000,
+        retries: 1
+      });
+      
+      if (outgoingRes.ok) {
+        outgoingData = outgoingRes.data;
+      } else {
+        console.warn('Failed to fetch outgoing connections:', outgoingRes.error);
+      }
+    }
+    
+    renderLiveData(incomingData, outgoingData);
     
     // Update status
-    const totalConnections = (data.sessions?.length || 0) + (data.flows?.length || 0);
+    const totalConnections = (incomingData.sessions?.length || 0) + 
+                             (incomingData.flows?.length || 0) + 
+                             (outgoingData.connections?.length || 0);
     if (liveStatus) {
       const now = new Date().toLocaleTimeString();
       liveStatus.textContent = `Updated ${now}`;
@@ -206,13 +260,14 @@ async function fetchAndRenderLiveData() {
 /**
  * Render live connection data on the map
  */
-function renderLiveData(data) {
+function renderLiveData(incomingData, outgoingData = { connections: [] }) {
   // Clear previous live visualization
   clearLiveVisualization();
   
-  const sessions = data.sessions || [];
-  const flows = data.flows || [];
-  const honeypotLocation = data.honeypot_location;
+  const sessions = incomingData.sessions || [];
+  const flows = incomingData.flows || [];
+  const honeypotLocation = incomingData.honeypot_location;
+  const outgoingConnections = outgoingData.connections || [];
   
   // Track unique source IPs to avoid duplicate markers
   const sourceIPs = new Map();
@@ -281,8 +336,34 @@ function renderLiveData(data) {
     }
   });
   
+  // Process outgoing connections - add markers for remote endpoints
+  outgoingConnections.forEach(conn => {
+    const remoteNode = conn.remote_node;
+    if (remoteNode && remoteNode.latitude && remoteNode.longitude) {
+      const ip = remoteNode.ip;
+      if (!sourceIPs.has(ip)) {
+        sourceIPs.set(ip, {
+          ...remoteNode,
+          outgoingCount: 1,
+          type: 'outgoing_dest'
+        });
+      } else {
+        const existing = sourceIPs.get(ip);
+        existing.outgoingCount = (existing.outgoingCount || 0) + 1;
+      }
+    }
+  });
+  
   // Add markers for all unique source IPs
   sourceIPs.forEach((nodeData, ip) => {
+    // Determine marker role based on type
+    let role = 'middle';
+    if (nodeData.type === 'attacker') {
+      role = 'first';  // Red marker for attackers
+    } else if (nodeData.type === 'outgoing_dest') {
+      role = 'outgoing';  // Different marker for outgoing destinations
+    }
+    
     const marker = mapModule.addMarkerForNode({
       ip: ip,
       latitude: nodeData.latitude,
@@ -292,17 +373,18 @@ function renderLiveData(data) {
       organization: nodeData.organization,
       extra_data: {
         live_sessions: nodeData.sessionCount || 0,
-        live_flows: nodeData.flowCount || 0
+        live_flows: nodeData.flowCount || 0,
+        outgoing_connections: nodeData.outgoingCount || 0
       }
-    }, nodeData.type === 'attacker' ? 'first' : 'middle');
+    }, role);
     
     if (marker) {
       liveMarkers.push(marker);
     }
   });
   
-  // Draw connection arcs from attackers to honeypot
-  drawLiveArcs(sessions, flows, honeypotLocation);
+  // Draw connection arcs from attackers to honeypot and from honeypot to outgoing destinations
+  drawLiveArcs(sessions, flows, honeypotLocation, outgoingConnections);
   
   // Fit map to show all markers
   if (liveMarkers.length > 0) {
@@ -317,9 +399,9 @@ function renderLiveData(data) {
 }
 
 /**
- * Draw arcs showing connections from attackers to honeypot
+ * Draw arcs showing connections from attackers to honeypot and from honeypot to outgoing destinations
  */
-function drawLiveArcs(sessions, flows, honeypotLocation) {
+function drawLiveArcs(sessions, flows, honeypotLocation, outgoingConnections = []) {
   // Check if Leaflet is available
   if (typeof L === 'undefined') return;
   
@@ -336,6 +418,21 @@ function drawLiveArcs(sessions, flows, honeypotLocation) {
           to: [parseFloat(honeypotLocation.latitude), parseFloat(honeypotLocation.longitude)],
           type: 'session',
           ip: node.ip
+        });
+      }
+    });
+    
+    // Add arcs for outgoing connections (from honeypot to remote)
+    outgoingConnections.forEach(conn => {
+      const remoteNode = conn.remote_node;
+      if (remoteNode && remoteNode.latitude && remoteNode.longitude) {
+        arcs.push({
+          from: [parseFloat(honeypotLocation.latitude), parseFloat(honeypotLocation.longitude)],
+          to: [parseFloat(remoteNode.latitude), parseFloat(remoteNode.longitude)],
+          type: 'outgoing',
+          ip: remoteNode.ip,
+          process: conn.process_name,
+          port: conn.remote_port
         });
       }
     });
@@ -392,6 +489,14 @@ export function getLiveStats() {
   return {
     isActive: isLiveMode,
     minutes: currentMinutes,
-    markerCount: liveMarkers.length
+    markerCount: liveMarkers.length,
+    showOutgoing: showOutgoing
   };
+}
+
+/**
+ * Check if outgoing connections are enabled
+ */
+export function isOutgoingEnabled() {
+  return showOutgoing;
 }
