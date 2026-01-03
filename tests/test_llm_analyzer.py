@@ -264,6 +264,43 @@ class TestLLMAnalyzerWithMockedOllama:
         with patch('src.llm_analyzer._HAS_OLLAMA', True):
             assert analyzer.is_available() is True
 
+    def test_find_matching_model(self):
+        """Test the _find_matching_model helper method."""
+        from src.llm_analyzer import LLMAnalyzer
+        
+        with patch('src.llm_analyzer._HAS_OLLAMA', False):
+            analyzer = LLMAnalyzer()
+            
+            # Test exact match
+            assert analyzer._find_matching_model(
+                "granite3.1-dense:8b",
+                ["granite3.1-dense:8b", "llama3.2:3b"]
+            ) is True
+            
+            # Test family match (model without tag matches model with tag)
+            assert analyzer._find_matching_model(
+                "granite3.1-dense:8b",
+                ["granite3.1-dense:2b", "llama3.2:3b"]
+            ) is True
+            
+            # Test family match (model with tag matches other tag in same family)
+            assert analyzer._find_matching_model(
+                "granite3.1-dense:2b",
+                ["granite3.1-dense:8b"]
+            ) is True
+            
+            # Test no match
+            assert analyzer._find_matching_model(
+                "granite3.1-dense:8b",
+                ["llama3.2:3b", "mistral:7b"]
+            ) is False
+            
+            # Test empty list
+            assert analyzer._find_matching_model(
+                "granite3.1-dense:8b",
+                []
+            ) is False
+
 
 class TestLLMAnalyzerFormalReport:
     """Tests for LLMAnalyzer formal report methods."""
