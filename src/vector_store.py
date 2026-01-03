@@ -10,6 +10,7 @@ Provides embedding generation and similarity search capabilities for:
 """
 import os
 import logging
+from functools import lru_cache
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime, timezone
 
@@ -154,9 +155,26 @@ class VectorStore:
         """Check if vector store is available and functional."""
         return self._client is not None and self._embedding_model is not None
     
+    @lru_cache(maxsize=1000)
+    def _cached_embed(self, text: str) -> Optional[tuple]:
+        """
+        Internal cached embedding function.
+        Returns tuple instead of list for hashability with lru_cache.
+        """
+        if not self._embedding_model:
+            return None
+        
+        try:
+            embedding = self._embedding_model.encode(text, convert_to_numpy=True)
+            return tuple(embedding.tolist())
+        except Exception as e:
+            logger.error("Failed to generate embedding: %s", e)
+            return None
+    
     def embed_text(self, text: str) -> Optional[List[float]]:
         """
         Generate embedding vector for text.
+        Uses LRU cache for frequently similar texts to improve performance.
         
         Args:
             text: Text to embed
@@ -164,15 +182,8 @@ class VectorStore:
         Returns:
             List of floats representing the embedding, or None if unavailable
         """
-        if not self._embedding_model:
-            return None
-        
-        try:
-            embedding = self._embedding_model.encode(text, convert_to_numpy=True)
-            return embedding.tolist()
-        except Exception as e:
-            logger.error("Failed to generate embedding: %s", e)
-            return None
+        result = self._cached_embed(text)
+        return list(result) if result else None
     
     def embed_texts(self, texts: List[str]) -> Optional[List[List[float]]]:
         """
@@ -406,14 +417,14 @@ class VectorStore:
             if not embedding:
                 return False
             
-            # Generate a numeric ID from IP
-            ip_parts = node_ip.split('.')
-            if len(ip_parts) == 4:
-                try:
-                    numeric_id = sum(int(p) << (8 * (3 - i)) for i, p in enumerate(ip_parts))
-                except ValueError:
-                    numeric_id = hash(node_ip) & 0xFFFFFFFF
-            else:
+            # Generate a numeric ID from IP address
+            # For IPv4: Convert to 32-bit integer using ipaddress module
+            # For other formats: Use hash function with 32-bit mask
+            try:
+                import ipaddress
+                numeric_id = int(ipaddress.IPv4Address(node_ip))
+            except (ValueError, ipaddress.AddressValueError):
+                # Fallback for non-IPv4 addresses
                 numeric_id = hash(node_ip) & 0xFFFFFFFF
             
             payload = {

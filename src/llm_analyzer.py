@@ -84,13 +84,13 @@ class LLMAnalyzer:
             available_models = [m.get("name", "") for m in models.get("models", [])]
             
             # Check if our preferred model is available
-            if self.model in available_models or any(self.model.startswith(m.split(":")[0]) for m in available_models):
+            if self._find_matching_model(self.model, available_models):
                 self._model_available = True
                 logger.info("LLM model available: %s", self.model)
             else:
                 # Try to find any supported model
                 for fallback in self.SUPPORTED_MODELS:
-                    if fallback in available_models or any(fallback.split(":")[0] in m for m in available_models):
+                    if self._find_matching_model(fallback, available_models):
                         self.model = fallback
                         self._model_available = True
                         logger.info("Using fallback LLM model: %s", self.model)
@@ -105,6 +105,34 @@ class LLMAnalyzer:
         except Exception as e:
             logger.error("Failed to initialize Ollama client: %s", e)
             logger.info("Make sure Ollama is running (ollama serve) and has a model installed.")
+    
+    def _find_matching_model(self, target_model: str, available_models: List[str]) -> bool:
+        """
+        Check if a target model matches any of the available models.
+        
+        Matches both exact names and model family prefixes (e.g., 'granite3.1-dense' matches 'granite3.1-dense:8b').
+        
+        Args:
+            target_model: Model name to search for
+            available_models: List of available model names
+            
+        Returns:
+            True if a match is found
+        """
+        # Exact match
+        if target_model in available_models:
+            return True
+        
+        # Extract model family (before the colon)
+        target_family = target_model.split(":")[0]
+        
+        # Check if any available model starts with the target family
+        for available in available_models:
+            available_family = available.split(":")[0]
+            if target_family == available_family:
+                return True
+        
+        return False
     
     def is_available(self) -> bool:
         """Check if LLM analyzer is available."""

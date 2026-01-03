@@ -1975,14 +1975,16 @@ class ForensicEngine:
                     raw_analysis=analysis
                 )
                 self.db.add(threat)
-                self.db.commit()
+                self.db.flush()  # Get the threat ID without committing
                 analysis["threat_analysis_id"] = threat.id
                 
                 # Index the threat for similarity search
                 if self.vector_store and self.vector_store.is_available():
                     if self.vector_store.index_threat(analysis, threat.id):
                         threat.is_indexed = True
-                        self.db.commit()
+                
+                # Single commit for both threat creation and indexing status
+                self.db.commit()
             except Exception as e:
                 self.logger.error("Failed to save threat analysis: %s", e)
                 try:

@@ -1037,7 +1037,8 @@ def get_threat():
         return jsonify({"error": "Invalid id"}), 400
     
     try:
-        from src.entry import ThreatAnalysis
+        if ThreatAnalysis is None:
+            return jsonify({"error": "ThreatAnalysis model not available"}), 500
         threat = engine.db.query(ThreatAnalysis).filter_by(id=threat_id).first()
         if not threat:
             return jsonify({"error": "Threat not found"}), 404
@@ -1085,7 +1086,8 @@ def cluster():
             return jsonify({"error": "Invalid id"}), 400
         
         try:
-            from src.entry import AttackerCluster
+            if AttackerCluster is None:
+                return jsonify({"error": "AttackerCluster model not available"}), 500
             cluster = engine.db.query(AttackerCluster).filter_by(id=cluster_id).first()
             if not cluster:
                 return jsonify({"error": "Cluster not found"}), 404
