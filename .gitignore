@@ -1,6 +1,9 @@
 # Byte-compiled / optimized / DLL files
 data
 *.db
+*.db-shm
+*.db-wal
+*.db-journal
 __pycache__/
 *.py[codz]
 *$py.class
