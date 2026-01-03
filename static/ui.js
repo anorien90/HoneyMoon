@@ -86,6 +86,26 @@ const BASE_PANELS = {
     minWidth: 260,
     minHeight: 150,
     sourceSelector: '#hopCard'
+  },
+  agents: {
+    id: 'panel-agents',
+    title: 'Agent System',
+    icon: '🤖',
+    defaultZone: ZONES.LEFT,
+    required: false,
+    minWidth: 300,
+    minHeight: 300,
+    sourceSelector: '#agentCard'
+  },
+  analysis: {
+    id: 'panel-analysis',
+    title: 'AI Analysis',
+    icon: '🧠',
+    defaultZone: ZONES.RIGHT,
+    required: false,
+    minWidth: 300,
+    minHeight: 300,
+    sourceSelector: '#analysisCard'
   }
 };
 

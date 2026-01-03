@@ -56,6 +56,9 @@ class VectorStore:
     # Default embedding model
     DEFAULT_MODEL = "all-MiniLM-L6-v2"  # Small, fast, good for semantic similarity
     
+    # Connection timeout in seconds for remote Qdrant
+    DOCKER_CONNECTION_TIMEOUT = 5
+    
     def __init__(
         self,
         qdrant_host: Optional[str] = None,
@@ -97,16 +100,28 @@ class VectorStore:
             return
         
         try:
-            # Try to connect to remote Qdrant first, fall back to local
-            use_local = os.environ.get("QDRANT_USE_LOCAL", "true").lower() in ("true", "1", "yes")
+            # Try to connect to remote Qdrant Docker container first, fall back to local
+            # Default behavior: prefer Docker container at localhost:6333
+            use_local = os.environ.get("QDRANT_USE_LOCAL", "false").lower() in ("true", "1", "yes")
             
-            if use_local:
+            if not use_local:
+                # Try Docker container connection first
+                try:
+                    self._client = QdrantClient(host=self.qdrant_host, port=self.qdrant_port, timeout=self.DOCKER_CONNECTION_TIMEOUT)
+                    # Test connection by listing collections
+                    self._client.get_collections()
+                    logger.info("Connected to Qdrant Docker container at %s:%s", self.qdrant_host, self.qdrant_port)
+                except Exception as docker_err:
+                    logger.info("Qdrant Docker container not available at %s:%s (%s), falling back to local storage", 
+                               self.qdrant_host, self.qdrant_port, docker_err)
+                    logger.info("💡 Hint: For better performance, start Qdrant with: docker-compose up qdrant")
+                    self._client = None
+            
+            # Fall back to local storage if Docker not available or explicitly requested
+            if self._client is None:
                 os.makedirs(self.qdrant_path, exist_ok=True)
                 self._client = QdrantClient(path=self.qdrant_path)
                 logger.info("Connected to local Qdrant at %s", self.qdrant_path)
-            else:
-                self._client = QdrantClient(host=self.qdrant_host, port=self.qdrant_port)
-                logger.info("Connected to Qdrant server at %s:%s", self.qdrant_host, self.qdrant_port)
             
             # Initialize collections
             self._ensure_collections()
