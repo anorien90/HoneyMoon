@@ -849,3 +849,61 @@ class TestConnectionLogging:
         assert len(connections) == 1
         assert connections[0]["direction"] == "internal"
         assert connections[0]["remote_addr"] == "192.168.1.20"
+
+
+class TestIPv4Detection:
+    """Tests for IPv4 address detection helper."""
+
+    def test_is_public_ipv4_public_address(self):
+        """Test detection of public IPv4 addresses."""
+        from src.forensic_engine import _is_public_ipv4
+        
+        assert _is_public_ipv4("8.8.8.8") is True
+        assert _is_public_ipv4("1.1.1.1") is True
+        assert _is_public_ipv4("34.107.243.93") is True
+        assert _is_public_ipv4("140.82.121.5") is True
+
+    def test_is_public_ipv4_private_address(self):
+        """Test rejection of private IPv4 addresses."""
+        from src.forensic_engine import _is_public_ipv4
+        
+        # RFC 1918 private addresses
+        assert _is_public_ipv4("10.0.0.1") is False
+        assert _is_public_ipv4("192.168.1.1") is False
+        assert _is_public_ipv4("172.16.0.1") is False
+        assert _is_public_ipv4("172.31.255.255") is False
+        
+        # Localhost
+        assert _is_public_ipv4("127.0.0.1") is False
+        
+        # Link-local
+        assert _is_public_ipv4("169.254.1.1") is False
+
+    def test_is_public_ipv4_ipv6_address(self):
+        """Test rejection of IPv6 addresses."""
+        from src.forensic_engine import _is_public_ipv4
+        
+        assert _is_public_ipv4("2606:4700::6812:ec44") is False
+        assert _is_public_ipv4("::1") is False
+        assert _is_public_ipv4("fe80::e13f:fef2:6df0:a49d") is False
+
+    def test_is_public_ipv4_invalid_address(self):
+        """Test rejection of invalid addresses."""
+        from src.forensic_engine import _is_public_ipv4
+        
+        assert _is_public_ipv4("") is False
+        assert _is_public_ipv4(None) is False
+        assert _is_public_ipv4("not.an.ip.address") is False
+        assert _is_public_ipv4("256.1.1.1") is False  # Invalid octet
+        assert _is_public_ipv4("1.2.3") is False  # Not enough octets
+
+    def test_is_public_ipv4_multicast_and_special(self):
+        """Test rejection of multicast and special addresses."""
+        from src.forensic_engine import _is_public_ipv4
+        
+        # Multicast (224.0.0.0/4)
+        assert _is_public_ipv4("224.0.0.1") is False
+        assert _is_public_ipv4("239.255.255.255") is False
+        
+        # 0.0.0.0/8
+        assert _is_public_ipv4("0.0.0.0") is False

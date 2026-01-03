@@ -67,6 +67,56 @@ def _sha256_text(s: str) -> str:
     return _sha256_bytes(s.encode('utf-8', errors='replace'))
 
 
+def _is_public_ipv4(ip_addr: str) -> bool:
+    """
+    Check if the given IP address is a public IPv4 address.
+    Returns False for private/internal IPv4, IPv6, or invalid addresses.
+    """
+    if not ip_addr:
+        return False
+    
+    # Check if it's IPv6 (contains colons)
+    if ':' in ip_addr:
+        return False
+    
+    # Check if it's a valid IPv4 pattern
+    parts = ip_addr.split('.')
+    if len(parts) != 4:
+        return False
+    
+    try:
+        octets = [int(p) for p in parts]
+        if not all(0 <= o <= 255 for o in octets):
+            return False
+    except ValueError:
+        return False
+    
+    # Check for private/internal IP ranges (RFC 1918 + localhost + link-local)
+    # 10.0.0.0/8
+    if octets[0] == 10:
+        return False
+    # 172.16.0.0/12
+    if octets[0] == 172 and 16 <= octets[1] <= 31:
+        return False
+    # 192.168.0.0/16
+    if octets[0] == 192 and octets[1] == 168:
+        return False
+    # 127.0.0.0/8 (localhost)
+    if octets[0] == 127:
+        return False
+    # 169.254.0.0/16 (link-local)
+    if octets[0] == 169 and octets[1] == 254:
+        return False
+    # 0.0.0.0/8
+    if octets[0] == 0:
+        return False
+    # 224.0.0.0/4 (multicast)
+    if octets[0] >= 224:
+        return False
+    
+    return True
+
+
 class ForensicEngine:
     def __init__(self, db_path='sqlite:///forensic_engine.db', honeypot_data_dir='./data/honeypot', honey_auto_ingest=True, nginx_auto_ingest=True, outgoing_monitor=True):
         self.logger = logging.getLogger(__name__)
@@ -1140,10 +1190,13 @@ class ForensicEngine:
         # enrichment (optional)
         if enrich and hp_session.src_ip:
             try:
-                node = self.get_node_from_db_or_web(hp_session.src_ip)
-                hp_session.extra = hp_session.extra or {}
-                if node:
-                    hp_session.extra["node_cached"] = {"ip": node.ip, "organization": node.organization, "asn": node.asn, "country": node.country}
+                # Only trace public IPv4 addresses for map display
+                # Internal/private IPs and IPv6 addresses don't need geolocation
+                if _is_public_ipv4(hp_session.src_ip):
+                    node = self.get_node_from_db_or_web(hp_session.src_ip, session=session)
+                    hp_session.extra = hp_session.extra or {}
+                    if node:
+                        hp_session.extra["node_cached"] = {"ip": node.ip, "organization": node.organization, "asn": node.asn, "country": node.country}
             except Exception:
                 pass
 
@@ -1453,6 +1506,23 @@ class ForensicEngine:
                         # Store the connection
                         db_sess = self.Session()
                         try:
+                            # Trace public IPv4 addresses to create NetworkNode entries with geolocation
+                            # This allows the map to show markers for these connections
+                            if remote_addr and _is_public_ipv4(remote_addr):
+                                try:
+                                    # Use ensure_node_minimal for efficiency (doesn't fetch full geolocation immediately)
+                                    # But we want full geolocation for map display, so use get_node_from_db_or_web
+                                    self.get_node_from_db_or_web(remote_addr, session=db_sess)
+                                except Exception as trace_err:
+                                    self.logger.debug("[%s] Error tracing remote address %s: %s", thread_name, remote_addr, trace_err)
+                            
+                            # Also trace local IPv4 addresses if they're public
+                            if local_addr and _is_public_ipv4(local_addr):
+                                try:
+                                    self.get_node_from_db_or_web(local_addr, session=db_sess)
+                                except Exception as trace_err:
+                                    self.logger.debug("[%s] Error tracing local address %s: %s", thread_name, local_addr, trace_err)
+                            
                             outgoing_conn = OutgoingConnection(
                                 timestamp=now,
                                 local_addr=local_addr,
