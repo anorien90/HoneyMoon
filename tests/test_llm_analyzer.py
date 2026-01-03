@@ -221,7 +221,7 @@ class TestLLMAnalyzerWithMockedOllama:
     def test_analyze_session_with_mock(self):
         """Test session analysis with mocked Ollama."""
         mock_ollama = MagicMock()
-        mock_ollama.list.return_value = {"models": [{"name": "granite3.1-dense:8b"}]}
+        mock_ollama.list.return_value = {"models": [{"model": "granite3.1-dense:8b"}]}
         mock_ollama.chat.return_value = {
             "message": {
                 "content": '{"threat_type": "SSH Brute Force", "severity": "high", "confidence": 0.9}'
