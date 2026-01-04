@@ -698,6 +698,90 @@ input:focus, select:focus {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* AI Action Buttons */
+.ai-actions-panel {
+  background: var(--glass);
+  border-radius: var(--radius);
+  padding: 0.5rem;
+}
+
+.ai-action-btn {
+  padding: 0.35rem 0.6rem !important;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white !important;
+  border: none !important;
+  border-radius: 4px;
+  font-size: 0.7rem !important;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
+}
+
+.ai-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
+  filter: brightness(1.1);
+}
+
+.ai-action-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.2);
+}
+
+/* Session row AI action buttons (shown on hover) */
+.session-row-actions {
+  display: none;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.session-row:hover .session-row-actions {
+  display: flex;
+}
+
+.session-row-action {
+  padding: 2px 6px;
+  font-size: 10px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.session-row-action:hover {
+  filter: brightness(1.15);
+}
+
+/* Context suggestions in chat */
+.context-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.context-suggestion-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.context-suggestion-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
 /* Utilities */
 .hidden { display: none !important; }
 .muted { color: var(--muted); }

@@ -704,6 +704,115 @@ function showSimilarAttackersModal(originalIp, attackers) {
 }
 
 // ============================================
+// NODE REPORT DISPLAY
+// ============================================
+
+/**
+ * Display a generated node report in a modal
+ * @param {Object} report - Node report data from LLM
+ * @param {string} ip - The IP address for the report
+ */
+export function showNodeReportResult(report, ip) {
+  if (report.error) {
+    const html = `<div class="muted">Report generation failed: ${escapeHtml(report.error || 'Unknown error')}</div>`;
+    ui.showModal({
+      title: `Node Intelligence - ${ip}`,
+      html,
+      allowPin: true
+    });
+    return;
+  }
+  
+  let html = '<div class="node-report" style="max-height: 600px; overflow-y: auto; padding: 8px;">';
+  
+  // Header
+  html += `
+    <div style="background: var(--bg-secondary); padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <strong style="font-size: 14px;">🖥️ Node Intelligence Report</strong>
+        <span class="small muted">${new Date().toLocaleString()}</span>
+      </div>
+      <div class="mb-1"><strong>IP:</strong> <code>${escapeHtml(ip)}</code></div>
+      ${report.threat_level ? `<div class="mb-1"><strong>Threat Level:</strong> ${getSeverityBadge(report.threat_level)}</div>` : ''}
+    </div>
+  `;
+  
+  // Summary
+  if (report.summary || report.assessment) {
+    html += `
+      <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 12px; margin-bottom: 16px; border-radius: 4px;">
+        <strong style="color: #1e40af;">Assessment</strong>
+        <p style="margin: 8px 0 0 0; line-height: 1.5;">${escapeHtml(report.summary || report.assessment)}</p>
+      </div>
+    `;
+  }
+  
+  // Organization/ISP info
+  if (report.organization || report.isp) {
+    html += `<div style="margin-bottom: 12px;">`;
+    html += `<strong style="color: var(--accent);">🏢 Network Information</strong>`;
+    html += `<div style="margin-top: 8px; font-size: 13px;">`;
+    if (report.organization) html += `<div><strong>Organization:</strong> ${escapeHtml(report.organization)}</div>`;
+    if (report.isp) html += `<div><strong>ISP:</strong> ${escapeHtml(report.isp)}</div>`;
+    if (report.asn) html += `<div><strong>ASN:</strong> ${escapeHtml(report.asn)}</div>`;
+    if (report.location) html += `<div><strong>Location:</strong> ${escapeHtml(report.location)}</div>`;
+    html += `</div></div>`;
+  }
+  
+  // Threat indicators
+  if (report.indicators?.length || report.threat_indicators?.length) {
+    const indicators = report.indicators || report.threat_indicators;
+    html += `<div style="margin-bottom: 12px;">`;
+    html += `<strong style="color: #ef4444;">🚨 Threat Indicators</strong>`;
+    html += `<ul style="margin: 8px 0; padding-left: 20px; font-size: 12px;">`;
+    indicators.slice(0, 10).forEach(ind => {
+      html += `<li>${escapeHtml(typeof ind === 'string' ? ind : JSON.stringify(ind))}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  // Activity history
+  if (report.activity_history?.length || report.history?.length) {
+    const history = report.activity_history || report.history;
+    html += `<div style="margin-bottom: 12px;">`;
+    html += `<strong style="color: var(--accent);">📅 Activity History</strong>`;
+    html += `<ul style="margin: 8px 0; padding-left: 20px; font-size: 12px;">`;
+    history.slice(0, 5).forEach(item => {
+      html += `<li>${escapeHtml(typeof item === 'string' ? item : JSON.stringify(item))}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  // Recommendations
+  if (report.recommendations?.length) {
+    html += `<div style="margin-bottom: 12px;">`;
+    html += `<strong style="color: #22c55e;">✅ Recommendations</strong>`;
+    html += `<ol style="margin: 8px 0; padding-left: 20px; font-size: 12px;">`;
+    report.recommendations.slice(0, 5).forEach(rec => {
+      html += `<li>${escapeHtml(rec)}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+  
+  // Raw data fallback
+  if (!report.summary && !report.assessment) {
+    html += `<details style="margin-top: 16px;">`;
+    html += `<summary class="small muted" style="cursor: pointer;">View raw data</summary>`;
+    html += `<pre style="margin-top: 8px; font-size: 11px; overflow-x: auto;">${escapeHtml(JSON.stringify(report, null, 2))}</pre>`;
+    html += `</details>`;
+  }
+  
+  html += '</div>';
+  
+  ui.showModal({
+    title: `Node Intelligence - ${ip}`,
+    html,
+    allowPin: true,
+    onPin: () => ui.addPinnedCard(`Intel: ${ip}`, html)
+  });
+}
+
+// ============================================
 // SYSTEM STATUS
 // ============================================
 
