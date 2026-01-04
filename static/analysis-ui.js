@@ -588,45 +588,289 @@ export function showFormalReportModal(report, sessionId) {
 }
 
 function showCountermeasuresModal(data, sessionId) {
-  const html = `
-    <div class="countermeasures">
-      ${data.recommendations ? `
-        <div class="mb-2"><strong>Recommendations:</strong></div>
-        <pre style="white-space: pre-wrap; font-size: 12px; max-height: 400px; overflow: auto;">${escapeHtml(JSON.stringify(data.recommendations, null, 2))}</pre>
-      ` : `
-        <div class="muted">No countermeasures available: ${escapeHtml(data.error || 'Unknown error')}</div>
-      `}
-    </div>
-  `;
-  
+  // Handle error case
+  if (data.error) {
+    const html = `<div class="muted">Countermeasure generation failed: ${escapeHtml(data.error)}</div>`;
+    ui.showModal({
+      title: `Countermeasures - Session ${sessionId}`,
+      html,
+      allowPin: true
+    });
+    return;
+  }
+
+  const priorityColors = {
+    immediate: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a'
+  };
+  const priorityColor = priorityColors[data.priority?.toLowerCase()] || '#6b7280';
+
+  let html = `<div class="countermeasures" style="max-height: 70vh; overflow-y: auto;">`;
+
+  // Header
+  html += `
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${priorityColor};">
+      <div>
+        <div class="font-medium">⚔️ Active Countermeasure Recommendations</div>
+        <div class="text-xs muted">Session ${sessionId}</div>
+        ${data.priority ? `<div class="text-xs mt-1">Priority: <span style="color: ${priorityColor}; font-weight: 600;">${escapeHtml(data.priority)}</span></div>` : ''}
+      </div>
+    </div>`;
+
+  // Recommended Capability
+  if (data.recommended_capability) {
+    const capabilityDescriptions = {
+      json_tail: '📊 JSON Tail - Real-time command monitoring via cowrie.json',
+      manhole: '🔧 Manhole - Direct Python REPL access to session objects',
+      output_plugin: '⚡ Output Plugin - Automated response triggers',
+      proxy_mode: '🖥️ Proxy Mode - Pass-through to real backend VM',
+      playlog: '🎬 Playlog - Terminal session replay'
+    };
+    html += `<div class="mt-2"><strong>🎯 Recommended Capability</strong>
+      <div class="text-sm mt-1 p-2 border rounded" style="background: var(--glass);">
+        ${capabilityDescriptions[data.recommended_capability] || escapeHtml(data.recommended_capability)}
+      </div>
+    </div>`;
+  }
+
+  // Response Actions
+  if (data.response_actions?.length) {
+    html += `<div class="mt-3"><strong>🎭 Recommended Response Actions</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    const actionColors = {
+      observe: '#6b7280', delay: '#ca8a04', fake_data: '#8b5cf6',
+      tarpit: '#ea580c', disconnect: '#dc2626', alert: '#dc2626',
+      capture: '#2563eb', deception: '#8b5cf6'
+    };
+    data.response_actions.forEach(action => {
+      const color = actionColors[action] || '#6b7280';
+      html += `<span style="padding: 0.25rem 0.75rem; background: ${color}22; border: 1px solid ${color}; border-radius: 4px; color: ${color};">${escapeHtml(action)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // Recommendations (if present as array or object)
+  if (data.recommendations) {
+    html += `<div class="mt-3"><strong>📝 Recommendations</strong>`;
+    if (Array.isArray(data.recommendations)) {
+      html += `<ol class="text-xs mt-1" style="margin-left: 1rem;">`;
+      data.recommendations.forEach(rec => {
+        html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(typeof rec === 'string' ? rec : JSON.stringify(rec))}</li>`;
+      });
+      html += `</ol>`;
+    } else if (typeof data.recommendations === 'object') {
+      html += `<div class="text-xs mt-1 p-2 border rounded" style="background: var(--glass);">`;
+      Object.entries(data.recommendations).forEach(([key, value]) => {
+        html += `<div style="margin-bottom: 0.25rem;"><strong>${escapeHtml(key)}:</strong> ${escapeHtml(typeof value === 'string' ? value : JSON.stringify(value))}</div>`;
+      });
+      html += `</div>`;
+    } else {
+      html += `<div class="text-sm mt-1">${escapeHtml(String(data.recommendations))}</div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Implementation Steps
+  if (data.implementation_steps?.length) {
+    html += `<div class="mt-3"><strong>📋 Implementation Steps</strong><ol class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.implementation_steps.forEach(step => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(step)}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+
+  // Manhole Commands
+  if (data.manhole_commands?.length) {
+    html += `<div class="mt-3"><strong>🔧 Manhole Commands</strong>
+      <div class="text-xs mt-1 muted">SSH to Manhole: <code>ssh -p 2500 -l cowrie localhost</code></div>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; overflow-x: auto;">`;
+    data.manhole_commands.forEach(cmd => {
+      html += `>>> ${escapeHtml(cmd)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+
+  // Monitoring Queries
+  if (data.monitoring_queries?.length) {
+    html += `<div class="mt-3"><strong>📊 Monitoring Queries (jq)</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; overflow-x: auto;">`;
+    data.monitoring_queries.forEach(query => {
+      html += `tail -f cowrie.json | jq '${escapeHtml(query)}'\n`;
+    });
+    html += `</pre></div>`;
+  }
+
+  // Risk Assessment
+  if (data.risk_assessment) {
+    html += `<div class="mt-3"><strong>⚠️ Risk Assessment</strong><div class="text-xs mt-1" style="white-space: pre-wrap;">${escapeHtml(data.risk_assessment)}</div></div>`;
+  }
+
+  // Timing and Expected Outcome
+  if (data.timing) {
+    html += `<div class="mt-2"><strong>⏱️ Timing:</strong> <span class="text-xs">${escapeHtml(data.timing)}</span></div>`;
+  }
+  if (data.expected_outcome) {
+    html += `<div class="mt-2"><strong>🎯 Expected Outcome:</strong> <span class="text-xs">${escapeHtml(data.expected_outcome)}</span></div>`;
+  }
+
+  html += `</div>`;
+
   ui.showModal({
-    title: `Countermeasures - Session ${sessionId}`,
+    title: `⚔️ Countermeasures - Session ${sessionId}`,
     html,
     allowPin: true,
+    allowPinToSidebar: true,
     onPin: () => ui.addPinnedCard(`Countermeasures: Session ${sessionId}`, html)
   });
 }
 
 function showDetectionRulesModal(data, sessionId) {
-  const html = `
-    <div class="detection-rules">
-      ${data.rules ? `
-        <div class="mb-2"><strong>Generated Detection Rules:</strong></div>
-        <pre style="white-space: pre-wrap; font-size: 11px; max-height: 400px; overflow: auto; background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 4px;">${escapeHtml(JSON.stringify(data.rules, null, 2))}</pre>
-      ` : data.sigma_rules ? `
-        <div class="mb-2"><strong>Sigma Rules:</strong></div>
-        <pre style="white-space: pre-wrap; font-size: 11px; max-height: 400px; overflow: auto; background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 4px;">${escapeHtml(data.sigma_rules)}</pre>
-      ` : `
-        <div class="muted">No detection rules generated: ${escapeHtml(data.error || 'Unknown error')}</div>
-      `}
-    </div>
-  `;
-  
+  // Handle error case
+  if (data.error) {
+    const html = `<div class="muted">Detection rule generation failed: ${escapeHtml(data.error)}</div>`;
+    ui.showModal({
+      title: `Detection Rules - Session ${sessionId}`,
+      html,
+      allowPin: true
+    });
+    return;
+  }
+
+  let html = `<div class="detection-rules" style="max-height: 70vh; overflow-y: auto;">`;
+
+  html += `
+    <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius);">
+      <div class="font-medium">🛡️ Detection Rules</div>
+      <div class="text-xs muted">Generated from Session ${sessionId}</div>
+      ${data.deployment_priority ? `<div class="text-xs mt-1">Priority: <strong>${escapeHtml(data.deployment_priority)}</strong></div>` : ''}
+    </div>`;
+
+  // Detection Logic
+  if (data.detection_logic) {
+    html += `<div class="mt-2"><strong>📋 Detection Strategy</strong><div class="text-sm mt-1" style="white-space: pre-wrap;">${escapeHtml(data.detection_logic)}</div></div>`;
+  }
+
+  // Sigma Rules
+  if (data.sigma_rules?.length || (typeof data.sigma_rules === 'string' && data.sigma_rules)) {
+    html += `<div class="mt-3"><strong>📊 Sigma Rules (SIEM)</strong>`;
+    const sigmaRules = Array.isArray(data.sigma_rules) ? data.sigma_rules : [data.sigma_rules];
+    sigmaRules.forEach((rule, i) => {
+      html += `<details class="mt-1"><summary class="text-xs cursor-pointer" style="cursor: pointer;">Rule ${i + 1}</summary>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">${escapeHtml(typeof rule === 'string' ? rule : JSON.stringify(rule, null, 2))}</pre>
+      </details>`;
+    });
+    html += `</div>`;
+  }
+
+  // Firewall Rules
+  if (data.firewall_rules?.length) {
+    html += `<div class="mt-3"><strong>🔥 Firewall Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">`;
+    data.firewall_rules.forEach(rule => {
+      html += `${escapeHtml(rule)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+
+  // Cowrie Filter
+  if (data.cowrie_filter) {
+    html += `<div class="mt-3"><strong>🍯 Cowrie Command Filter</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">${escapeHtml(JSON.stringify(data.cowrie_filter, null, 2))}</pre>
+    </div>`;
+  }
+
+  // YARA Rules
+  if (data.yara_rules?.length) {
+    html += `<div class="mt-3"><strong>🔬 YARA Rules</strong>`;
+    data.yara_rules.forEach((rule, i) => {
+      html += `<details class="mt-1"><summary class="text-xs" style="cursor: pointer;">Rule ${i + 1}</summary>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">${escapeHtml(rule)}</pre>
+      </details>`;
+    });
+    html += `</div>`;
+  }
+
+  // Snort Rules
+  if (data.snort_rules?.length) {
+    html += `<div class="mt-3"><strong>🦈 Snort/Suricata Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">`;
+    data.snort_rules.forEach(rule => {
+      html += `${escapeHtml(rule)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+
+  // Generic rules object fallback
+  if (data.rules && !data.sigma_rules && !data.firewall_rules && !data.yara_rules && !data.snort_rules) {
+    html += `<div class="mt-3"><strong>📜 Generated Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; max-height: 300px;">${escapeHtml(JSON.stringify(data.rules, null, 2))}</pre>
+    </div>`;
+  }
+
+  // False Positive Notes
+  if (data.false_positive_notes) {
+    html += `<div class="mt-3"><strong>⚠️ False Positive Guidance</strong><div class="text-xs mt-1" style="white-space: pre-wrap;">${escapeHtml(data.false_positive_notes)}</div></div>`;
+  }
+
+  // Command patterns
+  if (data.command_patterns?.length) {
+    html += `<div class="mt-3"><strong>📋 Command Patterns</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.command_patterns.forEach(pattern => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border); font-family: monospace;">${escapeHtml(pattern)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  // Export buttons
+  html += `
+    <div class="mt-3 pt-3 border-t" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <button id="downloadRulesBtn" class="small" style="background: #3b82f6; color: white; padding: 6px 12px;">
+        💾 Download JSON
+      </button>
+      <button id="copyRulesBtn" class="small" style="background: #6b7280; color: white; padding: 6px 12px;">
+        📋 Copy to Clipboard
+      </button>
+    </div>`;
+
+  html += `</div>`;
+
   ui.showModal({
-    title: `Detection Rules - Session ${sessionId}`,
+    title: `🛡️ Detection Rules - Session ${sessionId}`,
     html,
     allowPin: true,
-    onPin: () => ui.addPinnedCard(`Rules: Session ${sessionId}`, html)
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`Rules: Session ${sessionId}`, html),
+    onShow: () => {
+      const downloadBtn = document.getElementById('downloadRulesBtn');
+      const copyBtn = document.getElementById('copyRulesBtn');
+
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+          const dataStr = JSON.stringify(data, null, 2);
+          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+          const url = URL.createObjectURL(dataBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `detection-rules-session-${sessionId}-${Date.now()}.json`;
+          link.click();
+          URL.revokeObjectURL(url);
+          ui.toast('Rules downloaded');
+        });
+      }
+
+      if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+          const dataStr = JSON.stringify(data, null, 2);
+          navigator.clipboard.writeText(dataStr).then(() => {
+            ui.toast('Rules copied to clipboard');
+          }).catch(err => {
+            console.error('Failed to copy:', err);
+            ui.toast('Failed to copy rules');
+          });
+        });
+      }
+    }
   });
 }
 

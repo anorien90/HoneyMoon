@@ -1310,7 +1310,7 @@ export function closeAllPinnedCards() {
 
 let previousActiveElement = null;
 
-export function showModal({ title = '', html = '', text = '', allowPin = false, allowPinToSidebar = false, onPin = null, onPinLeft = null, onPinMiddle = null, onPinRight = null } = {}) {
+export function showModal({ title = '', html = '', text = '', allowPin = false, allowPinToSidebar = false, onPin = null, onPinLeft = null, onPinMiddle = null, onPinRight = null, onShow = null } = {}) {
   const container = $('modalContainer');
   if (!container) return;
   
@@ -1379,6 +1379,12 @@ export function showModal({ title = '', html = '', text = '', allowPin = false, 
     if (e.key === 'Escape') hideModal();
   });
   modal.focus();
+  
+  // Call onShow callback after modal is fully rendered
+  if (typeof onShow === 'function') {
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => onShow());
+  }
 }
 
 export function hideModal() {

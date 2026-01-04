@@ -250,7 +250,10 @@ export async function viewHoneypotSession(id) {
           const cmRes = await honeypotApi.getActiveCountermeasures(s.id);
           ui.setLoading(false);
           if (cmRes.ok && cmRes.data) {
+            // Auto-save countermeasures to database
+            await honeypotApi.saveCountermeasures(s.id, cmRes.data);
             showCountermeasures(cmRes.data, s);
+            ui.toast('Countermeasures generated and saved');
           } else {
             ui.toast(cmRes.error || 'Countermeasure recommendation failed');
           }
@@ -268,7 +271,10 @@ export async function viewHoneypotSession(id) {
           const rulesRes = await honeypotApi.generateDetectionRules(s.id);
           ui.setLoading(false);
           if (rulesRes.ok && rulesRes.data) {
+            // Auto-save detection rules to database
+            await honeypotApi.saveDetectionRules(s.id, rulesRes.data);
             showDetectionRules(rulesRes.data, s);
+            ui.toast('Detection rules generated and saved');
           } else {
             ui.toast(rulesRes.error || 'Detection rule generation failed');
           }
