@@ -19,7 +19,8 @@ except Exception:
 try:
     from src.entry import (
         NetworkNode, Organization, WebAccess, AnalysisSession,
-        ISP, OutgoingConnection, ThreatAnalysis, AttackerCluster
+        ISP, OutgoingConnection, ThreatAnalysis, AttackerCluster,
+        CountermeasureRecord, DetectionRuleRecord
     )
 except Exception:
     NetworkNode = None
@@ -30,6 +31,8 @@ except Exception:
     OutgoingConnection = None
     ThreatAnalysis = None
     AttackerCluster = None
+    CountermeasureRecord = None
+    DetectionRuleRecord = None
 
 # Configure paths
 TEMPLATE_DIR = os.environ.get("IPMAP_TEMPLATES", "/home/anorien/lib/HoneyMoon/templates")
@@ -86,6 +89,8 @@ register_all_blueprints(
     outgoing_connection_model=OutgoingConnection,
     threat_analysis_model=ThreatAnalysis,
     attacker_cluster_model=AttackerCluster,
+    countermeasure_model=CountermeasureRecord,
+    detection_rule_model=DetectionRuleRecord,
     task_type=TaskType if _HAS_AGENT_SYSTEM else None,
     task_status=TaskStatus if _HAS_AGENT_SYSTEM else None,
     task_priority=TaskPriority if _HAS_AGENT_SYSTEM else None,
