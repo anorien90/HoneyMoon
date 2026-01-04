@@ -417,8 +417,34 @@ function showHttpReportModal(data, ip) {
       </div>
     </div>`;
   
+  // Handle summary - can be string or object
   if (data.summary) {
-    html += `<div class="mt-2"><strong>📝 Summary</strong><div class="text-sm mt-1" style="line-height: 1.5;">${escapeHtml(data.summary)}</div></div>`;
+    html += `<div class="mt-2"><strong>📝 Summary</strong>`;
+    if (typeof data.summary === 'object') {
+      html += `<div class="text-sm mt-1" style="line-height: 1.5;">`;
+      if (data.summary.activity) {
+        html += `<div><strong>Activity:</strong> ${escapeHtml(data.summary.activity)}</div>`;
+      }
+      if (data.summary.source) {
+        html += `<div><strong>Source:</strong> ${escapeHtml(data.summary.source)}</div>`;
+      }
+      if (data.summary.user_agent) {
+        html += `<div><strong>User Agent:</strong> ${escapeHtml(data.summary.user_agent)}</div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div class="text-sm mt-1" style="line-height: 1.5;">${escapeHtml(data.summary)}</div>`;
+    }
+    html += `</div>`;
+  }
+  
+  // Anomalies section
+  if (data.anomalies?.length) {
+    html += `<div class="mt-3"><strong>⚠️ Anomalies</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.anomalies.forEach(anomaly => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(anomaly)}</li>`;
+    });
+    html += `</ul></div>`;
   }
   
   if (data.attack_patterns?.length) {
@@ -442,10 +468,47 @@ function showHttpReportModal(data, ip) {
     html += `</div></div>`;
   }
   
+  // Threat assessment details
+  if (data.threat_assessment) {
+    const ta = data.threat_assessment;
+    const taLevel = (ta.threat_level || 'unknown').toLowerCase();
+    const taColor = severityColors[taLevel] || '#6b7280';
+    html += `<div class="mt-3"><strong>🎯 Threat Assessment</strong><div class="text-xs mt-1 p-2 border rounded" style="background: var(--glass);">`;
+    html += `<div><strong>Threat Level:</strong> <span style="color: ${taColor}; font-weight: 600;">${escapeHtml(ta.threat_level || 'Unknown')}</span></div>`;
+    if (ta.confidence != null) {
+      html += `<div><strong>Confidence:</strong> ${Math.round(ta.confidence * 100)}%</div>`;
+    }
+    if (ta.reasoning) {
+      html += `<div class="muted mt-1">${escapeHtml(ta.reasoning)}</div>`;
+    }
+    html += `</div></div>`;
+  }
+  
+  // Vulnerability probes
+  if (data.vulnerability_probes?.length) {
+    html += `<div class="mt-3"><strong>🔓 Vulnerability Probes</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.vulnerability_probes.forEach(probe => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(probe)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
   if (data.suspicious_paths?.length) {
     html += `<div class="mt-3"><strong>🚨 Suspicious Paths</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
     data.suspicious_paths.slice(0, 20).forEach(path => {
       html += `<span style="padding: 0.125rem 0.5rem; background: #dc262622; border-radius: 4px; border: 1px solid #dc2626; font-family: monospace;">${escapeHtml(path)}</span>`;
+    });
+    if (data.suspicious_paths.length > 20) {
+      html += `<span class="muted">...and ${data.suspicious_paths.length - 20} more</span>`;
+    }
+    html += `</div></div>`;
+  }
+  
+  // Suspicious user agents
+  if (data.suspicious_user_agents?.length) {
+    html += `<div class="mt-3"><strong>🕵️ Suspicious User Agents</strong><div class="text-xs mt-1" style="display: flex; flex-direction: column; gap: 0.25rem;">`;
+    data.suspicious_user_agents.forEach(ua => {
+      html += `<span style="padding: 0.25rem 0.5rem; background: #f59e0b22; border-radius: 4px; border: 1px solid #f59e0b; font-family: monospace; font-size: 0.65rem;">${escapeHtml(ua)}</span>`;
     });
     html += `</div></div>`;
   }
@@ -473,6 +536,11 @@ function showHttpReportModal(data, ip) {
       html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(rec)}</li>`;
     });
     html += `</ol></div>`;
+  }
+  
+  // Report metadata
+  if (data.generated_at) {
+    html += `<div class="mt-3 text-xs muted" style="text-align: right;">Generated: ${new Date(data.generated_at).toLocaleString()}</div>`;
   }
   
   html += `</div>`;
