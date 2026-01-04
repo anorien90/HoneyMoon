@@ -1,5 +1,7 @@
-export function escapeHtml(str) {
-  if (!str) return '';
+export function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  // Convert non-strings to string first
+  const str = typeof value === 'string' ? value : String(value);
   const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   return str.replace(/[&<>"']/g, m => escapeMap[m]);
 }
