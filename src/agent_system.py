@@ -74,6 +74,11 @@ class AgentTask:
     schedule_interval: Optional[int] = None  # seconds
     next_run: Optional[datetime] = None
     run_count: int = 0
+    # Natural language input/output support
+    request_text: Optional[str] = None  # Original natural language request
+    response_text: Optional[str] = None  # Natural language summary of results
+    suggested_actions: Optional[List[str]] = None  # Suggested follow-up actions
+    context_data: Optional[Dict[str, Any]] = None  # RAG context used for the task
     
     def dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -95,7 +100,11 @@ class AgentTask:
             "confirmed": self.confirmed,
             "schedule_interval": self.schedule_interval,
             "next_run": self.next_run.isoformat() if self.next_run else None,
-            "run_count": self.run_count
+            "run_count": self.run_count,
+            "request_text": self.request_text,
+            "response_text": self.response_text,
+            "suggested_actions": self.suggested_actions,
+            "context_data": self.context_data
         }
 
 
@@ -415,6 +424,9 @@ class AgentSystem:
                         task.status = TaskStatus.COMPLETED
                         task.completed_at = datetime.now(timezone.utc)
                         task.progress = 1.0
+                        # Generate natural language response
+                        task.response_text = self.generate_task_response(task)
+                        task.suggested_actions = self._generate_suggested_actions(task)
                     
                     # Persist completed status
                     self._persist_task(task)
@@ -425,6 +437,7 @@ class AgentSystem:
                         task.status = TaskStatus.FAILED
                         task.error = str(e)
                         task.completed_at = datetime.now(timezone.utc)
+                        task.response_text = f"Task failed: {str(e)}"
                     
                     # Persist failed status
                     self._persist_task(task)
@@ -953,3 +966,607 @@ class AgentSystem:
             "mcp_server_bound": self.mcp_server is not None,
             "engine_bound": self.engine is not None
         }
+    
+    # ============================================
+    # NATURAL LANGUAGE TASK PROCESSING
+    # ============================================
+    
+    def create_task_from_natural_language(
+        self,
+        request_text: str,
+        context_type: Optional[str] = None,
+        context_id: Optional[str] = None
+    ) -> Optional[AgentTask]:
+        """
+        Create a task from a natural language request.
+        
+        Uses LLM to interpret the user's intent and create appropriate task.
+        
+        Args:
+            request_text: Natural language description of what the user wants
+            context_type: Optional context type (session, node, threat, cluster)
+            context_id: Optional context ID
+            
+        Returns:
+            Created AgentTask with natural language response
+        """
+        if not self.mcp_server:
+            return None
+        
+        # Parse the natural language request to determine task type and parameters
+        parsed = self._parse_natural_language_request(request_text, context_type, context_id)
+        
+        if not parsed:
+            return None
+        
+        # Create the task with NL fields
+        task = AgentTask(
+            id=str(uuid.uuid4()),
+            task_type=parsed["task_type"],
+            name=parsed["name"],
+            description=parsed["description"],
+            priority=parsed["priority"],
+            parameters=parsed["parameters"],
+            requires_confirmation=parsed.get("requires_confirmation", False),
+            request_text=request_text,
+            context_data=parsed.get("context_data")
+        )
+        
+        with self._lock:
+            self._tasks[task.id] = task
+        
+        # Persist task to database
+        self._persist_task(task)
+        
+        # Queue task if not requiring confirmation
+        if not task.requires_confirmation:
+            self._task_queue.put(task.id)
+        
+        self._add_message(
+            task.id,
+            "info",
+            f"Task created from request: {request_text[:100]}...",
+            {"task_id": task.id, "task_type": task.task_type.value, "parsed": parsed}
+        )
+        
+        return task
+    
+    def _parse_natural_language_request(
+        self,
+        request_text: str,
+        context_type: Optional[str] = None,
+        context_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Parse a natural language request into task parameters.
+        
+        Uses pattern matching and optional LLM for complex requests.
+        """
+        request_lower = request_text.lower().strip()
+        
+        # Get RAG context if MCP server is available
+        context_data = None
+        if self.mcp_server:
+            try:
+                context_data = self.mcp_server.get_context_for_query(request_text, limit=3)
+            except Exception:
+                pass
+        
+        # Pattern matching for common request types
+        parsed = None
+        
+        # Investigation patterns
+        if any(kw in request_lower for kw in ['investigate', 'look into', 'examine', 'check out']):
+            parsed = self._parse_investigation_request(request_text, request_lower)
+        
+        # Analysis patterns
+        elif any(kw in request_lower for kw in ['analyze', 'analysis', 'assess', 'evaluate']):
+            parsed = self._parse_analysis_request(request_text, request_lower)
+        
+        # Search/find patterns
+        elif any(kw in request_lower for kw in ['find', 'search', 'look for', 'similar', 'like']):
+            parsed = self._parse_search_request(request_text, request_lower)
+        
+        # Threat hunting patterns
+        elif any(kw in request_lower for kw in ['hunt', 'threat hunt', 'proactive']):
+            parsed = self._parse_threat_hunt_request(request_text, request_lower)
+        
+        # Monitoring patterns
+        elif any(kw in request_lower for kw in ['monitor', 'watch', 'observe', 'track']):
+            parsed = self._parse_monitoring_request(request_text, request_lower)
+        
+        # Countermeasure patterns
+        elif any(kw in request_lower for kw in ['countermeasure', 'defend', 'protect', 'block', 'mitigate']):
+            parsed = self._parse_countermeasure_request(request_text, request_lower)
+        
+        # Report generation patterns
+        elif any(kw in request_lower for kw in ['report', 'summary', 'document', 'formal']):
+            parsed = self._parse_report_request(request_text, request_lower)
+        
+        # Default to investigation if context provided
+        elif context_type and context_id:
+            parsed = self._parse_context_request(request_text, context_type, context_id)
+        
+        # Generic task as fallback
+        if not parsed:
+            parsed = {
+                "task_type": TaskType.INVESTIGATION,
+                "name": f"Custom Request: {request_text[:50]}",
+                "description": request_text,
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"query": request_text},
+                "steps": [{"tool": "search_similar_sessions", "params": {"query": request_text}}]
+            }
+        
+        # Add context data if available
+        if context_data:
+            parsed["context_data"] = context_data
+            parsed["parameters"]["context"] = context_data
+        
+        return parsed
+    
+    def _parse_investigation_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse investigation-related requests."""
+        import re
+        
+        # Check for IP address
+        ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', request_text)
+        if ip_match:
+            ip = ip_match.group(0)
+            return {
+                "task_type": TaskType.INVESTIGATION,
+                "name": f"IP Investigation: {ip}",
+                "description": f"Investigating IP address {ip}",
+                "priority": TaskPriority.HIGH,
+                "parameters": {"ip": ip},
+                "steps": [
+                    {"tool": "get_ip_intel", "params": {"ip": ip}},
+                    {"tool": "search_similar_attackers", "params": {"ip": ip}},
+                    {"tool": "get_web_accesses", "params": {"ip": ip}},
+                    {"tool": "list_honeypot_sessions", "params": {"ip_filter": ip}}
+                ]
+            }
+        
+        # Check for session ID
+        session_match = re.search(r'session\s*(?:#|id:?)?\s*(\d+)', request_lower)
+        if session_match:
+            session_id = int(session_match.group(1))
+            return {
+                "task_type": TaskType.INVESTIGATION,
+                "name": f"Session Investigation: #{session_id}",
+                "description": f"Investigating honeypot session {session_id}",
+                "priority": TaskPriority.HIGH,
+                "parameters": {"session_id": session_id},
+                "steps": [
+                    {"tool": "get_honeypot_session", "params": {"session_id": session_id}},
+                    {"tool": "analyze_session", "params": {"session_id": session_id}},
+                    {"tool": "search_similar_sessions", "params": {"session_id": session_id}}
+                ]
+            }
+        
+        # Generic investigation
+        return {
+            "task_type": TaskType.INVESTIGATION,
+            "name": "General Investigation",
+            "description": request_text,
+            "priority": TaskPriority.NORMAL,
+            "parameters": {"query": request_text},
+            "steps": [{"tool": "search_similar_sessions", "params": {"query": request_text}}]
+        }
+    
+    def _parse_analysis_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse analysis-related requests."""
+        import re
+        
+        session_match = re.search(r'session\s*(?:#|id:?)?\s*(\d+)', request_lower)
+        if session_match:
+            session_id = int(session_match.group(1))
+            return {
+                "task_type": TaskType.ANALYSIS,
+                "name": f"Session Analysis: #{session_id}",
+                "description": f"Analyzing honeypot session {session_id}",
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"session_id": session_id},
+                "steps": [
+                    {"tool": "analyze_session", "params": {"session_id": session_id, "save_result": True}}
+                ]
+            }
+        
+        return {
+            "task_type": TaskType.ANALYSIS,
+            "name": "Custom Analysis",
+            "description": request_text,
+            "priority": TaskPriority.NORMAL,
+            "parameters": {"query": request_text},
+            "steps": []
+        }
+    
+    def _parse_search_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse search-related requests."""
+        import re
+        
+        ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', request_text)
+        if ip_match and 'similar' in request_lower:
+            ip = ip_match.group(0)
+            return {
+                "task_type": TaskType.INVESTIGATION,
+                "name": f"Find Similar Attackers: {ip}",
+                "description": f"Finding attackers similar to {ip}",
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"ip": ip},
+                "steps": [{"tool": "search_similar_attackers", "params": {"ip": ip}}]
+            }
+        
+        # Generic search
+        query = request_text
+        for prefix in ['find', 'search', 'search for', 'look for', 'similar to']:
+            if request_lower.startswith(prefix):
+                query = request_text[len(prefix):].strip()
+                break
+        
+        return {
+            "task_type": TaskType.INVESTIGATION,
+            "name": f"Search: {query[:50]}",
+            "description": f"Searching for: {query}",
+            "priority": TaskPriority.NORMAL,
+            "parameters": {"query": query},
+            "steps": [
+                {"tool": "search_similar_sessions", "params": {"query": query}},
+                {"tool": "search_similar_threats", "params": {"query": query}}
+            ]
+        }
+    
+    def _parse_threat_hunt_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse threat hunting requests."""
+        query = request_text
+        for prefix in ['hunt for', 'threat hunt', 'hunt']:
+            if request_lower.startswith(prefix):
+                query = request_text[len(prefix):].strip()
+                break
+        
+        return {
+            "task_type": TaskType.INVESTIGATION,
+            "name": f"Threat Hunt: {query[:50]}",
+            "description": f"Hunting for threats: {query}",
+            "priority": TaskPriority.HIGH,
+            "parameters": {"query": query},
+            "steps": [
+                {"tool": "search_similar_threats", "params": {"query": query}},
+                {"tool": "list_honeypot_sessions", "params": {"limit": 50}},
+                {"tool": "get_live_connections", "params": {"minutes": 30}}
+            ]
+        }
+    
+    def _parse_monitoring_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse monitoring requests."""
+        import re
+        
+        # Check for time specification
+        minutes = 15
+        time_match = re.search(r'(\d+)\s*(?:min(?:ute)?s?|hr?|hour)', request_lower)
+        if time_match:
+            val = int(time_match.group(1))
+            if 'hour' in time_match.group(0) or 'hr' in time_match.group(0):
+                minutes = val * 60
+            else:
+                minutes = val
+        
+        return {
+            "task_type": TaskType.MONITORING,
+            "name": "Live Activity Monitor",
+            "description": f"Monitoring live activity for {minutes} minutes",
+            "priority": TaskPriority.NORMAL,
+            "parameters": {"minutes": minutes},
+            "steps": [{"tool": "get_live_connections", "params": {"minutes": minutes}}]
+        }
+    
+    def _parse_countermeasure_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse countermeasure requests."""
+        import re
+        
+        session_match = re.search(r'session\s*(?:#|id:?)?\s*(\d+)', request_lower)
+        if session_match:
+            session_id = int(session_match.group(1))
+            return {
+                "task_type": TaskType.COUNTERMEASURE,
+                "name": f"Countermeasure Planning: Session #{session_id}",
+                "description": f"Planning countermeasures for session {session_id}",
+                "priority": TaskPriority.HIGH,
+                "requires_confirmation": True,
+                "parameters": {"session_id": session_id},
+                "steps": [
+                    {"tool": "analyze_session", "params": {"session_id": session_id}},
+                    {"tool": "recommend_active_countermeasures", "params": {"session_id": session_id}},
+                    {"tool": "generate_detection_rules", "params": {"session_id": session_id}}
+                ]
+            }
+        
+        return {
+            "task_type": TaskType.COUNTERMEASURE,
+            "name": "Countermeasure Planning",
+            "description": request_text,
+            "priority": TaskPriority.HIGH,
+            "requires_confirmation": True,
+            "parameters": {"query": request_text},
+            "steps": []
+        }
+    
+    def _parse_report_request(self, request_text: str, request_lower: str) -> Dict[str, Any]:
+        """Parse report generation requests."""
+        import re
+        
+        session_match = re.search(r'session\s*(?:#|id:?)?\s*(\d+)', request_lower)
+        if session_match:
+            session_id = int(session_match.group(1))
+            return {
+                "task_type": TaskType.ANALYSIS,
+                "name": f"Formal Report: Session #{session_id}",
+                "description": f"Generating formal report for session {session_id}",
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"session_id": session_id},
+                "steps": [
+                    {"tool": "generate_threat_report", "params": {"session_id": session_id}}
+                ]
+            }
+        
+        ip_match = re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', request_text)
+        if ip_match:
+            ip = ip_match.group(0)
+            return {
+                "task_type": TaskType.ANALYSIS,
+                "name": f"Node Report: {ip}",
+                "description": f"Generating report for node {ip}",
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"ip": ip},
+                "steps": [
+                    {"tool": "generate_node_report", "params": {"ip": ip}}
+                ]
+            }
+        
+        return {
+            "task_type": TaskType.ANALYSIS,
+            "name": "Custom Report",
+            "description": request_text,
+            "priority": TaskPriority.NORMAL,
+            "parameters": {"query": request_text},
+            "steps": []
+        }
+    
+    def _parse_context_request(
+        self,
+        request_text: str,
+        context_type: str,
+        context_id: str
+    ) -> Dict[str, Any]:
+        """Parse request with specific context."""
+        if context_type == "session":
+            session_id = int(context_id)
+            return {
+                "task_type": TaskType.INVESTIGATION,
+                "name": f"Session Context: #{session_id}",
+                "description": f"{request_text} (for session {session_id})",
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"session_id": session_id, "query": request_text},
+                "steps": [
+                    {"tool": "get_honeypot_session", "params": {"session_id": session_id}},
+                    {"tool": "analyze_session", "params": {"session_id": session_id}}
+                ]
+            }
+        
+        elif context_type == "node":
+            return {
+                "task_type": TaskType.INVESTIGATION,
+                "name": f"Node Context: {context_id}",
+                "description": f"{request_text} (for node {context_id})",
+                "priority": TaskPriority.NORMAL,
+                "parameters": {"ip": context_id, "query": request_text},
+                "steps": [
+                    {"tool": "get_ip_intel", "params": {"ip": context_id}},
+                    {"tool": "search_similar_attackers", "params": {"ip": context_id}}
+                ]
+            }
+        
+        return {
+            "task_type": TaskType.INVESTIGATION,
+            "name": f"Context Request: {context_type}",
+            "description": request_text,
+            "priority": TaskPriority.NORMAL,
+            "parameters": {"context_type": context_type, "context_id": context_id, "query": request_text},
+            "steps": []
+        }
+    
+    def generate_task_response(self, task: AgentTask) -> str:
+        """
+        Generate a natural language response for a completed task.
+        
+        Args:
+            task: The completed task
+            
+        Returns:
+            Natural language summary of task results
+        """
+        if task.status != TaskStatus.COMPLETED:
+            return f"Task '{task.name}' is {task.status.value}."
+        
+        if not task.result:
+            return f"Task '{task.name}' completed but produced no results."
+        
+        result = task.result
+        response_parts = [f"**{task.name}** completed successfully."]
+        
+        # Generate response based on task type
+        if task.task_type == TaskType.INVESTIGATION:
+            response_parts.extend(self._format_investigation_response(result))
+        elif task.task_type == TaskType.ANALYSIS:
+            response_parts.extend(self._format_analysis_response(result))
+        elif task.task_type == TaskType.MONITORING:
+            response_parts.extend(self._format_monitoring_response(result))
+        elif task.task_type == TaskType.COUNTERMEASURE:
+            response_parts.extend(self._format_countermeasure_response(result))
+        else:
+            response_parts.append(f"Results: {len(result)} items.")
+        
+        # Add suggested actions
+        suggested = self._generate_suggested_actions(task)
+        if suggested:
+            response_parts.append("\n**Suggested next steps:**")
+            for action in suggested[:5]:
+                response_parts.append(f"• {action}")
+        
+        return "\n".join(response_parts)
+    
+    def _format_investigation_response(self, result: Dict[str, Any]) -> List[str]:
+        """Format investigation results for natural language response."""
+        parts = []
+        
+        findings = result.get("findings", [])
+        if findings:
+            parts.append(f"\n**Findings ({len(findings)}):**")
+            for finding in findings[:5]:
+                finding_type = finding.get("type", "unknown")
+                if finding_type == "threat_detected":
+                    details = finding.get("details", {})
+                    parts.append(f"• Threat detected: {details.get('threat_type', 'Unknown')} (Severity: {details.get('severity', 'Unknown')})")
+                elif finding_type == "similar_attackers_found":
+                    parts.append(f"• Found {finding.get('count', 0)} similar attackers")
+                elif finding_type == "tor_exit_node":
+                    parts.append(f"• TOR exit node detected: {finding.get('ip')}")
+                else:
+                    parts.append(f"• {finding_type}")
+        
+        recommendations = result.get("recommendations", [])
+        if recommendations:
+            parts.append(f"\n**Recommendations:**")
+            for rec in recommendations[:3]:
+                parts.append(f"• {rec}")
+        
+        tools_used = result.get("tools_used", [])
+        if tools_used:
+            successful = [t for t in tools_used if t.get("success")]
+            parts.append(f"\nExecuted {len(successful)}/{len(tools_used)} tools successfully.")
+        
+        if result.get("summary"):
+            parts.append(f"\n**Summary:**\n{result['summary']}")
+        
+        return parts
+    
+    def _format_analysis_response(self, result: Dict[str, Any]) -> List[str]:
+        """Format analysis results for natural language response."""
+        parts = []
+        
+        if result.get("threat_type"):
+            parts.append(f"\n**Threat Type:** {result['threat_type']}")
+        if result.get("severity"):
+            parts.append(f"**Severity:** {result['severity']}")
+        if result.get("confidence"):
+            parts.append(f"**Confidence:** {int(result['confidence'] * 100)}%")
+        if result.get("summary"):
+            parts.append(f"\n**Summary:**\n{result['summary']}")
+        
+        tactics = result.get("tactics", [])
+        if tactics:
+            parts.append(f"\n**MITRE ATT&CK Tactics:** {', '.join(tactics)}")
+        
+        techniques = result.get("techniques", [])
+        if techniques:
+            parts.append(f"**Techniques:** {', '.join(techniques[:5])}")
+        
+        return parts
+    
+    def _format_monitoring_response(self, result: Dict[str, Any]) -> List[str]:
+        """Format monitoring results for natural language response."""
+        parts = []
+        
+        connections = result.get("connections_checked", 0)
+        if connections:
+            parts.append(f"\n**Connections Checked:** {connections}")
+        
+        anomalies = result.get("anomalies", [])
+        if anomalies:
+            parts.append(f"\n**⚠️ Anomalies Detected ({len(anomalies)}):**")
+            for anomaly in anomalies[:5]:
+                parts.append(f"• {anomaly.get('message', anomaly.get('type', 'Unknown anomaly'))}")
+        else:
+            parts.append("\nNo anomalies detected.")
+        
+        return parts
+    
+    def _format_countermeasure_response(self, result: Dict[str, Any]) -> List[str]:
+        """Format countermeasure results for natural language response."""
+        parts = []
+        
+        actions = result.get("actions", [])
+        if actions:
+            successful = [a for a in actions if a.get("success")]
+            parts.append(f"\n**Actions Executed:** {len(successful)}/{len(actions)} successful")
+        
+        rules = result.get("rules_generated", [])
+        if rules:
+            parts.append(f"**Detection Rules Generated:** {len(rules)}")
+        
+        return parts
+    
+    def _generate_suggested_actions(self, task: AgentTask) -> List[str]:
+        """Generate suggested follow-up actions based on task results."""
+        suggestions = []
+        result = task.result or {}
+        
+        # Investigation suggestions
+        if task.task_type == TaskType.INVESTIGATION:
+            findings = result.get("findings", [])
+            for finding in findings[:3]:
+                if finding.get("type") == "threat_detected":
+                    suggestions.append("Generate a formal threat report")
+                    suggestions.append("Plan countermeasures for this threat")
+                elif finding.get("type") == "similar_attackers_found":
+                    suggestions.append("Investigate similar attackers in detail")
+                    suggestions.append("Create an attacker cluster for tracking")
+        
+        # Analysis suggestions
+        elif task.task_type == TaskType.ANALYSIS:
+            if result.get("severity") in ["critical", "high"]:
+                suggestions.append("Immediately review and plan countermeasures")
+                suggestions.append("Generate detection rules to prevent similar attacks")
+            if result.get("indicators"):
+                suggestions.append("Add indicators to blocklist")
+        
+        # Monitoring suggestions
+        elif task.task_type == TaskType.MONITORING:
+            anomalies = result.get("anomalies", [])
+            if anomalies:
+                suggestions.append("Investigate anomalous IPs")
+                for anomaly in anomalies[:2]:
+                    if anomaly.get("ip"):
+                        suggestions.append(f"Investigate IP {anomaly['ip']}")
+        
+        # General suggestions
+        if not suggestions:
+            suggestions = [
+                "Search for similar patterns",
+                "Generate a detailed report",
+                "Set up monitoring for this threat type"
+            ]
+        
+        return suggestions
+    
+    def update_task_response(self, task_id: str) -> bool:
+        """
+        Update a task's natural language response after completion.
+        
+        Args:
+            task_id: ID of the task to update
+            
+        Returns:
+            True if updated successfully
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return False
+            
+            if task.status == TaskStatus.COMPLETED:
+                task.response_text = self.generate_task_response(task)
+                task.suggested_actions = self._generate_suggested_actions(task)
+                return True
+        
+        return False

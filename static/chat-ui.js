@@ -674,9 +674,21 @@ async function handleSendMessage() {
       renderChatMessage(response, 'assistant');
       chatHistory.push({ role: 'assistant', content: response });
       
+      // Show quick actions if available
+      if (res.data.quick_actions?.length) {
+        renderQuickActionsFromResponse(res.data.quick_actions);
+      }
+      
       // Show suggested tools
       if (res.data.suggested_tools?.length) {
         renderSuggestedTools(res.data.suggested_tools);
+      }
+      
+      // Show auto-execute result if available
+      if (res.data.auto_execute_result?.success) {
+        const autoResult = res.data.auto_execute_result;
+        renderChatMessage(`**Auto-executed:** ${autoResult.tool}`, 'system');
+        renderChatMessage(autoResult.data, 'tool', { toolName: autoResult.tool });
       }
       
       // Show RAG context summary if meaningful
@@ -694,6 +706,33 @@ async function handleSendMessage() {
     console.error('Chat error:', err);
     renderChatMessage('Error: ' + err.message, 'error');
   }
+}
+
+function renderQuickActionsFromResponse(actions) {
+  const container = $('suggestedTools');
+  if (!container || !actions.length) return;
+  
+  // Clear existing and add quick actions
+  container.innerHTML = `
+    <div class="quick-actions-header">
+      <span class="text-xs muted">⚡ Quick actions:</span>
+    </div>
+    <div class="quick-actions-list" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+  `;
+  
+  const listEl = container.querySelector('.quick-actions-list');
+  
+  actions.slice(0, 5).forEach(action => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-action-btn';
+    btn.style.cssText = 'display: flex; align-items: center; gap: 4px; padding: 6px 10px; font-size: 11px; background: var(--accent); color: white; border: none; border-radius: var(--radius); cursor: pointer;';
+    btn.innerHTML = escapeHtml(action.label);
+    btn.title = `Execute ${action.tool}`;
+    btn.dataset.tool = action.tool;
+    btn.dataset.params = JSON.stringify(action.params || {});
+    btn.addEventListener('click', () => handleToolClick(action.tool, action.params));
+    listEl.appendChild(btn);
+  });
 }
 
 async function handleToolClick(toolName, presetParams = null) {
