@@ -116,3 +116,46 @@ export async function createCluster(sessionIds, name = null) {
 export async function findSimilarAttackers(ip, threshold = 0.7, limit = 10) {
   return apiGet(`/api/v1/similar/attackers?ip=${encodeURIComponent(ip)}&threshold=${threshold}&limit=${limit}`, { timeout: 30000, retries: 2 });
 }
+
+// Node and HTTP report endpoints
+export async function generateNodeReport(ip) {
+  return apiPost('/api/v1/llm/node_report', { ip }, { timeout: 180000, retries: 1 });
+}
+
+export async function generateHttpReport(ip = null, limit = 100) {
+  const body = { limit };
+  if (ip) body.ip = ip;
+  return apiPost('/api/v1/llm/http_report', body, { timeout: 180000, retries: 1 });
+}
+
+// Detection rules persistence
+export async function listDetectionRules(sourceType = null, ruleType = null, limit = 100) {
+  const params = new URLSearchParams({ limit });
+  if (sourceType) params.append('source_type', sourceType);
+  if (ruleType) params.append('rule_type', ruleType);
+  return apiGet(`/api/v1/detection_rules?${params}`, { timeout: 30000, retries: 2 });
+}
+
+export async function saveDetectionRules(sessionId, rulesData) {
+  return apiPost('/api/v1/detection_rules/save', { session_id: sessionId, rules_data: rulesData }, { timeout: 60000, retries: 1 });
+}
+
+// Countermeasures persistence
+export async function saveCountermeasures(sessionId, countermeasuresData) {
+  return apiPost('/api/v1/countermeasures/save', { session_id: sessionId, countermeasures_data: countermeasuresData }, { timeout: 60000, retries: 1 });
+}
+
+// Agent chat endpoints
+export async function agentChat(message, conversationId = null, contextType = null, contextId = null) {
+  const body = { message };
+  if (conversationId) body.conversation_id = conversationId;
+  if (contextType) body.context_type = contextType;
+  if (contextId) body.context_id = contextId;
+  return apiPost('/api/v1/agent/chat', body, { timeout: 120000, retries: 1 });
+}
+
+export async function agentExecuteTool(tool, params = {}, conversationId = null, confirmed = false) {
+  const body = { tool, params, confirmed };
+  if (conversationId) body.conversation_id = conversationId;
+  return apiPost('/api/v1/agent/execute_tool', body, { timeout: 120000, retries: 1 });
+}

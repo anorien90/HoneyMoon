@@ -2279,18 +2279,21 @@ class ForensicEngine:
             filters=filters
         )
 
-    def search_similar_threats(self, query: str, limit: int = 10, filters: dict = None) -> list:
+    def search_similar_threats(self, query: str = None, limit: int = 10, filters: dict = None) -> list:
         """
         Search for similar threat analyses.
         
         Args:
-            query: Text query describing the threat
+            query: Text query describing the threat (optional, returns empty if not provided)
             limit: Maximum number of results
             filters: Optional filters
             
         Returns:
             List of similar threats with scores
         """
+        if not query:
+            return []
+        
         if not self.vector_store or not self.vector_store.is_available():
             return []
         
@@ -2582,6 +2585,220 @@ class ForensicEngine:
             session, threat_analysis, rule_formats
         )
 
+    def generate_node_report(self, ip: str) -> dict:
+        """
+        Generate a formal report for a network node including all activity.
+        
+        Args:
+            ip: IP address of the node
+            
+        Returns:
+            Node report with activity summary, threat analysis, and recommendations
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        # Get node details
+        node = self.get_entry(ip)
+        if not node:
+            return {"error": "Node not found"}
+        
+        # Get related data
+        accesses = self.get_accesses_for_ip(ip, limit=100)
+        
+        # Get honeypot sessions from this IP
+        honeypot_sessions = []
+        if HoneypotSession is not None:
+            sessions = self.db.query(HoneypotSession).filter_by(src_ip=ip).order_by(HoneypotSession.start_ts.desc()).limit(50).all()
+            honeypot_sessions = [s.dict() for s in sessions]
+        
+        # Get threat analyses for this IP
+        threat_analyses = self.db.query(ThreatAnalysis).filter_by(source_ip=ip).all()
+        threat_data = [t.dict() for t in threat_analyses]
+        
+        return self.llm_analyzer.generate_node_report(node, accesses, honeypot_sessions, threat_data)
+
+    def generate_http_activity_report(self, ip: str = None, limit: int = 100) -> dict:
+        """
+        Generate a report for HTTP activity (web accesses).
+        
+        Args:
+            ip: Optional IP to filter by
+            limit: Maximum number of accesses to include
+            
+        Returns:
+            HTTP activity report with patterns, threats, and recommendations
+        """
+        if not self.llm_analyzer or not self.llm_analyzer.is_available():
+            return {"error": "LLM analyzer not available"}
+        
+        # Get web accesses
+        accesses = self.get_accesses_for_ip(ip, limit=limit) if ip else []
+        if not ip and WebAccess is not None:
+            # Get recent accesses if no IP filter
+            rows = self.db.query(WebAccess).order_by(WebAccess.timestamp.desc()).limit(limit).all()
+            accesses = [r.dict() for r in rows]
+        
+        if not accesses:
+            return {"error": "No HTTP accesses found"}
+        
+        # Get related node info if IP is specified
+        node = self.get_entry(ip) if ip else None
+        
+        return self.llm_analyzer.generate_http_activity_report(accesses, node)
+
+    def save_detection_rules(self, session_id: int, rules_data: dict) -> dict:
+        """
+        Save generated detection rules to the database for persistent learning.
+        
+        Args:
+            session_id: ID of the session the rules were generated from
+            rules_data: Detection rules data from LLM
+            
+        Returns:
+            Dictionary with saved rule IDs
+        """
+        from .entry import DetectionRuleRecord
+        
+        saved_rules = []
+        
+        # Get session info
+        session = self.get_honeypot_session(session_id)
+        source_ip = session.get('src_ip') if session else None
+        
+        # Save Sigma rules
+        sigma_rules = rules_data.get('sigma_rules', [])
+        for i, rule_content in enumerate(sigma_rules):
+            record = DetectionRuleRecord(
+                source_type="session",
+                source_id=session_id,
+                source_ip=source_ip,
+                name=f"Sigma Rule {i+1} - Session {session_id}",
+                description=rules_data.get('detection_logic', ''),
+                rule_type="sigma",
+                severity=rules_data.get('deployment_priority', 'medium'),
+                rule_content=rule_content,
+                rule_data={"index": i, "session_id": session_id},
+                command_patterns=rules_data.get('command_patterns', [])
+            )
+            self.db.add(record)
+            saved_rules.append(("sigma", i))
+        
+        # Save firewall rules
+        firewall_rules = rules_data.get('firewall_rules', [])
+        for i, rule_content in enumerate(firewall_rules):
+            record = DetectionRuleRecord(
+                source_type="session",
+                source_id=session_id,
+                source_ip=source_ip,
+                name=f"Firewall Rule {i+1} - Session {session_id}",
+                rule_type="firewall",
+                severity=rules_data.get('deployment_priority', 'medium'),
+                rule_content=rule_content,
+                rule_data={"index": i, "session_id": session_id}
+            )
+            self.db.add(record)
+            saved_rules.append(("firewall", i))
+        
+        # Save YARA rules
+        yara_rules = rules_data.get('yara_rules', [])
+        for i, rule_content in enumerate(yara_rules):
+            record = DetectionRuleRecord(
+                source_type="session",
+                source_id=session_id,
+                source_ip=source_ip,
+                name=f"YARA Rule {i+1} - Session {session_id}",
+                rule_type="yara",
+                severity=rules_data.get('deployment_priority', 'medium'),
+                rule_content=rule_content,
+                rule_data={"index": i, "session_id": session_id}
+            )
+            self.db.add(record)
+            saved_rules.append(("yara", i))
+        
+        # Save Cowrie filter
+        cowrie_filter = rules_data.get('cowrie_filter')
+        if cowrie_filter:
+            record = DetectionRuleRecord(
+                source_type="session",
+                source_id=session_id,
+                source_ip=source_ip,
+                name=f"Cowrie Filter - Session {session_id}",
+                rule_type="cowrie",
+                severity=rules_data.get('deployment_priority', 'medium'),
+                rule_content=json.dumps(cowrie_filter),
+                rule_data=cowrie_filter,
+                command_patterns=cowrie_filter.get('command patterns', [])
+            )
+            self.db.add(record)
+            saved_rules.append(("cowrie", 0))
+        
+        self.db.commit()
+        
+        return {
+            "saved": True,
+            "rules_count": len(saved_rules),
+            "rules": saved_rules
+        }
+
+    def get_detection_rules(self, source_type: str = None, rule_type: str = None, limit: int = 100) -> list:
+        """
+        Get stored detection rules.
+        
+        Args:
+            source_type: Filter by source type
+            rule_type: Filter by rule type
+            limit: Maximum results
+            
+        Returns:
+            List of detection rule records
+        """
+        from .entry import DetectionRuleRecord
+        
+        query = self.db.query(DetectionRuleRecord)
+        if source_type:
+            query = query.filter_by(source_type=source_type)
+        if rule_type:
+            query = query.filter_by(rule_type=rule_type)
+        
+        rules = query.order_by(DetectionRuleRecord.created_at.desc()).limit(limit).all()
+        return [r.dict() for r in rules]
+
+    def save_countermeasures(self, session_id: int, countermeasures_data: dict) -> dict:
+        """
+        Save countermeasure recommendations to the database for tracking and learning.
+        
+        Args:
+            session_id: ID of the session the countermeasures are for
+            countermeasures_data: Countermeasure data from LLM
+            
+        Returns:
+            Dictionary with saved countermeasure ID
+        """
+        # Get or create threat analysis link
+        threat = self.db.query(ThreatAnalysis).filter_by(
+            source_type="session", source_id=session_id
+        ).first()
+        
+        record = CountermeasureRecord(
+            threat_analysis_id=threat.id if threat else None,
+            name=f"Countermeasures - Session {session_id}",
+            description=countermeasures_data.get('risk_assessment', ''),
+            plan=countermeasures_data,
+            status="planned",
+            immediate_actions=countermeasures_data.get('response_actions', []),
+            short_term_actions=countermeasures_data.get('implementation_steps', []),
+            firewall_rules=[],
+            detection_rules=countermeasures_data.get('monitoring_queries', [])
+        )
+        self.db.add(record)
+        self.db.commit()
+        
+        return {
+            "saved": True,
+            "countermeasure_id": record.id
+        }
+
     # -------------------------
     # Chat Conversation Methods
     # -------------------------
@@ -2670,6 +2887,39 @@ class ForensicEngine:
         """Get a conversation by ID."""
         conversation = self.db.query(ChatConversation).filter_by(id=conversation_id).first()
         return conversation.dict() if conversation else {"error": "Conversation not found"}
+
+    def add_message_to_conversation(self, conversation_id: int, role: str, content: str) -> dict:
+        """
+        Add a message to an existing conversation.
+        
+        Args:
+            conversation_id: ID of the conversation
+            role: Message role ('user' or 'assistant')
+            content: Message content
+            
+        Returns:
+            Updated conversation dictionary or error
+        """
+        conversation = self.db.query(ChatConversation).filter_by(id=conversation_id).first()
+        if not conversation:
+            return {"error": "Conversation not found"}
+        
+        messages = conversation.messages or []
+        messages.append({
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        conversation.messages = messages
+        conversation.updated_at = datetime.now(timezone.utc)
+        
+        try:
+            self.db.commit()
+            return conversation.dict()
+        except Exception as e:
+            self.db.rollback()
+            return {"error": f"Failed to add message: {e}"}
 
     def list_conversations(self, context_type: str = None, limit: int = 50) -> list:
         """List conversations, optionally filtered by context type."""

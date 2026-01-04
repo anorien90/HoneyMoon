@@ -5,6 +5,7 @@ import { apiGet, apiPost } from './api.js';
 import { escapeHtml, getSeverityBadge } from './util.js';
 import * as ui from './ui.js';
 import { generateFormalReport } from './analysis-ui.js';
+import * as honeypotApi from './honeypot.js';
 
 const $ = id => document.getElementById(id);
 
@@ -210,6 +211,58 @@ function setupEventHandlers() {
     }
   });
   
+  // Generate node report button
+  $('generateNodeReportBtn')?.addEventListener('click', async () => {
+    const ip = $('reportNodeIp')?.value?.trim();
+    if (!ip) {
+      ui.toast('Enter an IP address');
+      return;
+    }
+    
+    ui.setLoading(true, 'Generating node intelligence report...');
+    
+    try {
+      const res = await honeypotApi.generateNodeReport(ip);
+      ui.setLoading(false);
+      
+      if (!res.ok) {
+        ui.toast(res.error || 'Node report generation failed');
+        return;
+      }
+      
+      ui.toast('Node report generated successfully');
+      showNodeReportModal(res.data, ip);
+    } catch (err) {
+      ui.setLoading(false);
+      console.error('Node report generation failed:', err);
+      ui.toast('Node report generation failed');
+    }
+  });
+  
+  // Generate HTTP activity report button
+  $('generateHttpReportBtn')?.addEventListener('click', async () => {
+    const ip = $('reportHttpIp')?.value?.trim();
+    
+    ui.setLoading(true, 'Generating HTTP activity report...');
+    
+    try {
+      const res = await honeypotApi.generateHttpReport(ip || null, 100);
+      ui.setLoading(false);
+      
+      if (!res.ok) {
+        ui.toast(res.error || 'HTTP report generation failed');
+        return;
+      }
+      
+      ui.toast('HTTP activity report generated successfully');
+      showHttpReportModal(res.data, ip);
+    } catch (err) {
+      ui.setLoading(false);
+      console.error('HTTP report generation failed:', err);
+      ui.toast('HTTP activity report generation failed');
+    }
+  });
+  
   // Refresh reports button
   $('refreshReportsBtn')?.addEventListener('click', refreshReportsList);
   
@@ -251,6 +304,185 @@ function setupEventHandlers() {
         ui.toast('Failed to load report');
       }
     }
+  });
+}
+
+// ============================================
+// NODE REPORT MODAL
+// ============================================
+
+function showNodeReportModal(data, ip) {
+  const severityColors = {
+    critical: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a',
+    benign: '#10b981'
+  };
+  
+  const threatLevel = data.threat_assessment?.threat_level?.toLowerCase() || 'unknown';
+  const severityColor = severityColors[threatLevel] || '#6b7280';
+  
+  let html = `<div class="node-report" style="max-height: 70vh; overflow-y: auto;">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${severityColor};">
+      <div>
+        <div class="font-medium">🌐 Node Intelligence Report: ${escapeHtml(ip)}</div>
+        <div class="text-xs muted">Threat Level: <span style="color: ${severityColor}; font-weight: 600; text-transform: uppercase;">${escapeHtml(threatLevel)}</span> • Confidence: ${data.threat_assessment?.confidence ? Math.round(data.threat_assessment.confidence * 100) + '%' : '—'}</div>
+      </div>
+    </div>`;
+  
+  if (data.summary) {
+    html += `<div class="mt-2"><strong>📝 Executive Summary</strong><div class="text-sm mt-1" style="line-height: 1.5;">${escapeHtml(data.summary)}</div></div>`;
+  }
+  
+  if (data.activity_patterns?.length) {
+    html += `<div class="mt-3"><strong>🔍 Activity Patterns</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.activity_patterns.forEach(pattern => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(pattern)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  if (data.behavioral_indicators?.length) {
+    html += `<div class="mt-3"><strong>⚠️ Behavioral Indicators</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.behavioral_indicators.forEach(indicator => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(indicator)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  if (data.attribution_analysis) {
+    const attr = data.attribution_analysis;
+    html += `<div class="mt-3"><strong>🎯 Attribution Analysis</strong><div class="text-xs mt-1" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">`;
+    if (attr.organization_assessment) {
+      html += `<div><span class="muted">Organization:</span> ${escapeHtml(attr.organization_assessment)}</div>`;
+    }
+    if (attr.geographic_analysis) {
+      html += `<div><span class="muted">Geography:</span> ${escapeHtml(attr.geographic_analysis)}</div>`;
+    }
+    if (attr.infrastructure_type) {
+      html += `<div><span class="muted">Infrastructure:</span> ${escapeHtml(attr.infrastructure_type)}</div>`;
+    }
+    html += `</div></div>`;
+  }
+  
+  if (data.mitre_tactics?.length) {
+    html += `<div class="mt-3"><strong>🎯 MITRE ATT&CK Tactics</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.mitre_tactics.forEach(t => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: #3b82f622; border-radius: 4px; border: 1px solid #3b82f6;">${escapeHtml(t)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  if (data.recommendations?.length) {
+    html += `<div class="mt-3"><strong>✅ Recommendations</strong><ol class="text-xs mt-1" style="margin-left: 1rem; padding-left: 0.5rem;">`;
+    data.recommendations.forEach(rec => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(rec)}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `🌐 Node Intelligence Report - ${ip}`,
+    html,
+    allowPin: true,
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`Node Report ${ip}`, html)
+  });
+}
+
+// ============================================
+// HTTP REPORT MODAL
+// ============================================
+
+function showHttpReportModal(data, ip) {
+  const severityColors = {
+    critical: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a',
+    benign: '#10b981'
+  };
+  
+  const threatLevel = data.threat_assessment?.threat_level?.toLowerCase() || 'unknown';
+  const severityColor = severityColors[threatLevel] || '#6b7280';
+  
+  let html = `<div class="http-report" style="max-height: 70vh; overflow-y: auto;">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${severityColor};">
+      <div>
+        <div class="font-medium">🌐 HTTP Activity Report${ip ? `: ${escapeHtml(ip)}` : ''}</div>
+        <div class="text-xs muted">Threat Level: <span style="color: ${severityColor}; font-weight: 600; text-transform: uppercase;">${escapeHtml(threatLevel)}</span> • Analyzed ${data.access_count || 0} requests</div>
+      </div>
+    </div>`;
+  
+  if (data.summary) {
+    html += `<div class="mt-2"><strong>📝 Summary</strong><div class="text-sm mt-1" style="line-height: 1.5;">${escapeHtml(data.summary)}</div></div>`;
+  }
+  
+  if (data.attack_patterns?.length) {
+    html += `<div class="mt-3"><strong>⚔️ Attack Patterns Detected</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    data.attack_patterns.forEach(pattern => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(pattern)}</li>`;
+    });
+    html += `</ul></div>`;
+  }
+  
+  if (data.scanner_detection) {
+    const scanner = data.scanner_detection;
+    html += `<div class="mt-3"><strong>🔎 Scanner Detection</strong><div class="text-xs mt-1 p-2 border rounded" style="background: var(--glass);">`;
+    html += `<div>Scanner Detected: <strong>${scanner.is_scanner ? 'Yes' : 'No'}</strong></div>`;
+    if (scanner.scanner_type) {
+      html += `<div>Type: ${escapeHtml(scanner.scanner_type)}</div>`;
+    }
+    if (scanner.evidence) {
+      html += `<div class="muted mt-1">${escapeHtml(scanner.evidence)}</div>`;
+    }
+    html += `</div></div>`;
+  }
+  
+  if (data.suspicious_paths?.length) {
+    html += `<div class="mt-3"><strong>🚨 Suspicious Paths</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.suspicious_paths.slice(0, 20).forEach(path => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: #dc262622; border-radius: 4px; border: 1px solid #dc2626; font-family: monospace;">${escapeHtml(path)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  if (data.mitre_techniques?.length) {
+    html += `<div class="mt-3"><strong>🔧 MITRE ATT&CK Techniques</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.mitre_techniques.forEach(t => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: #8b5cf622; border-radius: 4px; border: 1px solid #8b5cf6;">${escapeHtml(t)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  if (data.blocking_rules?.length) {
+    html += `<div class="mt-3"><strong>🛡️ Suggested Blocking Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">`;
+    data.blocking_rules.forEach(rule => {
+      html += `${escapeHtml(rule)}\n`;
+    });
+    html += `</pre></div>`;
+  }
+  
+  if (data.recommendations?.length) {
+    html += `<div class="mt-3"><strong>✅ Recommendations</strong><ol class="text-xs mt-1" style="margin-left: 1rem; padding-left: 0.5rem;">`;
+    data.recommendations.forEach(rec => {
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(rec)}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+  
+  html += `</div>`;
+  
+  ui.showModal({
+    title: `🌐 HTTP Activity Report${ip ? ` - ${ip}` : ''}`,
+    html,
+    allowPin: true,
+    allowPinToSidebar: true,
+    onPin: () => ui.addPinnedCard(`HTTP Report${ip ? ` ${ip}` : ''}`, html)
   });
 }
 

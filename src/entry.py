@@ -600,3 +600,67 @@ class CountermeasureRecord(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }
+
+
+class DetectionRuleRecord(Base):
+    """
+    Stores generated detection rules from threat analyses.
+    Allows the system to learn and accumulate detection capabilities over time.
+    """
+    __tablename__ = 'detection_rule_records'
+
+    id = Column(Integer, primary_key=True)
+    
+    # Source information
+    source_type = Column(String, nullable=False)  # 'session', 'node', 'access', 'threat'
+    source_id = Column(Integer, nullable=True)
+    source_ip = Column(String, nullable=True)
+    
+    # Rule metadata
+    name = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    rule_type = Column(String, nullable=True)  # 'sigma', 'snort', 'yara', 'firewall', 'cowrie'
+    severity = Column(String, nullable=True)
+    
+    # The actual rule content
+    rule_content = Column(String, nullable=True)  # Raw rule text
+    rule_data = Column(JSON, default=dict)  # Structured rule data
+    
+    # Pattern information for learning
+    command_patterns = Column(JSON, default=list)  # Command patterns that triggered this rule
+    ioc_patterns = Column(JSON, default=list)  # IOC patterns
+    
+    # Usage tracking
+    deployment_status = Column(String, default="generated")  # generated, deployed, deprecated
+    hit_count = Column(Integer, default=0)  # How many times this rule matched
+    false_positive_count = Column(Integer, default=0)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_matched_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<DetectionRuleRecord(id={self.id}, name={self.name}, rule_type={self.rule_type})>"
+
+    def dict(self):
+        return {
+            "id": self.id,
+            "source_type": self.source_type,
+            "source_id": self.source_id,
+            "source_ip": self.source_ip,
+            "name": self.name,
+            "description": self.description,
+            "rule_type": self.rule_type,
+            "severity": self.severity,
+            "rule_content": self.rule_content,
+            "rule_data": self.rule_data,
+            "command_patterns": self.command_patterns,
+            "ioc_patterns": self.ioc_patterns,
+            "deployment_status": self.deployment_status,
+            "hit_count": self.hit_count,
+            "false_positive_count": self.false_positive_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_matched_at": self.last_matched_at.isoformat() if self.last_matched_at else None
+        }

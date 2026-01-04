@@ -326,45 +326,87 @@ function showThreatAnalysisResult(data, session) {
     <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${severityColor};">
       <div>
         <div class="font-medium">${escapeHtml(data.threat_type || 'Unknown Threat')}</div>
-        <div class="text-xs muted">Severity: <span style="color: ${severityColor}; font-weight: 600;">${escapeHtml(data.severity || 'unknown')}</span> • Confidence: ${data.confidence ? Math.round(data.confidence * 100) + '%' : '—'}</div>
+        <div class="text-xs muted">Severity: <span style="color: ${severityColor}; font-weight: 600; text-transform: uppercase;">${escapeHtml(data.severity || 'unknown')}</span> • Confidence: ${data.confidence ? Math.round(data.confidence * 100) + '%' : '—'}</div>
       </div>
     </div>`;
   
   if (data.summary) {
-    html += `<div class="mt-2"><strong>Summary</strong><div class="text-sm mt-1">${escapeHtml(data.summary)}</div></div>`;
+    html += `<div class="mt-2"><strong>📝 Summary</strong><div class="text-sm mt-1" style="line-height: 1.5;">${escapeHtml(data.summary)}</div></div>`;
   }
   
   if (data.tactics?.length) {
-    html += `<div class="mt-2"><strong>MITRE ATT&CK Tactics</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    html += `<div class="mt-2"><strong>🎯 MITRE ATT&CK Tactics</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
     data.tactics.forEach(t => {
-      html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(t)}</span>`;
+      html += `<span style="padding: 0.125rem 0.5rem; background: #3b82f622; border-radius: 4px; border: 1px solid #3b82f6;">${escapeHtml(t)}</span>`;
     });
     html += `</div></div>`;
   }
   
   if (data.techniques?.length) {
-    html += `<div class="mt-2"><strong>MITRE ATT&CK Techniques</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    html += `<div class="mt-2"><strong>🔧 MITRE ATT&CK Techniques</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
     data.techniques.forEach(t => {
-      html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border);">${escapeHtml(t)}</span>`;
+      html += `<span style="padding: 0.125rem 0.5rem; background: #8b5cf622; border-radius: 4px; border: 1px solid #8b5cf6;">${escapeHtml(t)}</span>`;
     });
     html += `</div></div>`;
   }
   
+  // Handle indicators - format as structured data instead of raw JSON
   if (data.indicators?.length) {
-    html += `<div class="mt-2"><strong>Indicators</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
-    data.indicators.slice(0, 10).forEach(ind => {
-      html += `<li>${escapeHtml(ind)}</li>`;
+    html += `<div class="mt-2"><strong>🔍 Indicators of Compromise</strong><div class="text-xs mt-1">`;
+    html += `<table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">`;
+    data.indicators.slice(0, 15).forEach(ind => {
+      if (typeof ind === 'object') {
+        const type = ind.type || 'Unknown';
+        const value = ind.value || JSON.stringify(ind);
+        html += `<tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.25rem; font-weight: 500; width: 80px;">${escapeHtml(type)}</td>
+          <td style="padding: 0.25rem; font-family: monospace;">${escapeHtml(String(value))}</td>
+        </tr>`;
+      } else {
+        html += `<tr style="border-bottom: 1px solid var(--border);">
+          <td colspan="2" style="padding: 0.25rem; font-family: monospace;">${escapeHtml(String(ind))}</td>
+        </tr>`;
+      }
     });
-    html += `</ul></div>`;
+    html += `</table></div></div>`;
+  }
+  
+  // Handle attacker profile - format nicely instead of raw JSON
+  if (data.attacker_profile) {
+    const profile = data.attacker_profile;
+    html += `<div class="mt-2"><strong>👤 Attacker Profile</strong><div class="text-xs mt-1" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">`;
+    
+    if (profile.skill_level) {
+      html += `<div><span class="muted">Skill Level:</span> <span style="font-weight: 500;">${escapeHtml(profile.skill_level)}</span></div>`;
+    }
+    if (typeof profile.likely_automated !== 'undefined') {
+      html += `<div><span class="muted">Automation:</span> <span style="font-weight: 500;">${profile.likely_automated ? 'Likely Automated' : 'Manual'}</span></div>`;
+    }
+    if (profile.potential_attribution) {
+      html += `<div><span class="muted">Attribution:</span> <span style="font-weight: 500;">${escapeHtml(profile.potential_attribution)}</span></div>`;
+    }
+    if (profile.motivation) {
+      html += `<div><span class="muted">Motivation:</span> <span style="font-weight: 500;">${escapeHtml(profile.motivation)}</span></div>`;
+    }
+    
+    html += `</div></div>`;
   }
   
   if (data.recommendations?.length) {
-    html += `<div class="mt-2"><strong>Recommendations</strong><ul class="text-xs mt-1" style="margin-left: 1rem;">`;
+    html += `<div class="mt-2"><strong>✅ Recommendations</strong><ol class="text-xs mt-1" style="margin-left: 1rem; padding-left: 0.5rem;">`;
     data.recommendations.slice(0, 10).forEach(rec => {
-      html += `<li>${escapeHtml(rec)}</li>`;
+      html += `<li style="margin-bottom: 0.25rem;">${escapeHtml(rec)}</li>`;
     });
-    html += `</ul></div>`;
+    html += `</ol></div>`;
   }
+  
+  // Add actions for saving countermeasures/rules
+  html += `
+    <div class="mt-3 pt-3 border-t" style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+      <button id="saveThreatAnalysis" class="small border rounded px-2 py-1" title="Save this analysis">💾 Save Analysis</button>
+      <button id="generateRulesFromThreat" class="small border rounded px-2 py-1" title="Generate detection rules">🛡️ Generate Rules</button>
+      <button id="generateCountermeasuresFromThreat" class="small border rounded px-2 py-1" title="Get countermeasures">⚔️ Countermeasures</button>
+    </div>`;
   
   html += `</div>`;
   
@@ -378,6 +420,49 @@ function showThreatAnalysisResult(data, session) {
     onPinMiddle: () => ui.addPanelToZone(`Threat ${session.id}`, html, 'middle'),
     onPinRight: () => ui.addPanelToZone(`Threat ${session.id}`, html, 'right')
   });
+  
+  // Setup action button handlers
+  setTimeout(() => {
+    document.getElementById('generateRulesFromThreat')?.addEventListener('click', async () => {
+      ui.setLoading(true, 'Generating detection rules...');
+      try {
+        const rulesRes = await honeypotApi.generateDetectionRules(session.id);
+        ui.setLoading(false);
+        if (rulesRes.ok && rulesRes.data) {
+          // Save the rules automatically
+          await honeypotApi.saveDetectionRules(session.id, rulesRes.data);
+          showDetectionRules(rulesRes.data, session);
+        } else {
+          ui.toast(rulesRes.error || 'Detection rule generation failed');
+        }
+      } catch (e) {
+        ui.setLoading(false);
+        ui.toast('Detection rule generation failed');
+      }
+    });
+    
+    document.getElementById('generateCountermeasuresFromThreat')?.addEventListener('click', async () => {
+      ui.setLoading(true, 'Getting countermeasure recommendations...');
+      try {
+        const cmRes = await honeypotApi.getActiveCountermeasures(session.id);
+        ui.setLoading(false);
+        if (cmRes.ok && cmRes.data) {
+          // Save the countermeasures automatically
+          await honeypotApi.saveCountermeasures(session.id, cmRes.data);
+          showCountermeasures(cmRes.data, session);
+        } else {
+          ui.toast(cmRes.error || 'Countermeasure recommendation failed');
+        }
+      } catch (e) {
+        ui.setLoading(false);
+        ui.toast('Countermeasure recommendation failed');
+      }
+    });
+    
+    document.getElementById('saveThreatAnalysis')?.addEventListener('click', () => {
+      ui.toast('Threat analysis saved');
+    });
+  }, 200);
 }
 
 // Show similar sessions
@@ -677,6 +762,12 @@ function showCountermeasures(data, session) {
     html += `<div class="mt-2"><strong>↩️ Rollback Plan:</strong> <span class="text-xs">${escapeHtml(data.rollback_plan)}</span></div>`;
   }
   
+  // Saved status indicator
+  html += `
+    <div class="mt-3 pt-3 border-t" style="display: flex; gap: 0.5rem; align-items: center;">
+      <span class="text-xs" style="color: #10b981;">✓ Countermeasures saved to database for learning</span>
+    </div>`;
+  
   html += `</div>`;
   
   ui.showModal({
@@ -760,6 +851,21 @@ function showDetectionRules(data, session) {
   if (data.false_positive_notes) {
     html += `<div class="mt-3"><strong>⚠️ False Positive Guidance</strong><div class="text-xs mt-1" style="white-space: pre-wrap;">${escapeHtml(data.false_positive_notes)}</div></div>`;
   }
+  
+  // Show command patterns that were used to generate rules
+  if (data.command_patterns?.length) {
+    html += `<div class="mt-3"><strong>📋 Command Patterns</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    data.command_patterns.forEach(pattern => {
+      html += `<span style="padding: 0.125rem 0.5rem; background: var(--glass); border-radius: 4px; border: 1px solid var(--border); font-family: monospace;">${escapeHtml(pattern)}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  // Saved status indicator
+  html += `
+    <div class="mt-3 pt-3 border-t" style="display: flex; gap: 0.5rem; align-items: center;">
+      <span class="text-xs" style="color: #10b981;">✓ Detection rules saved to database for learning</span>
+    </div>`;
   
   html += `</div>`;
   

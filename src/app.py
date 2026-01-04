@@ -1109,6 +1109,127 @@ def llm_detection_rules():
         return jsonify({"error": f"Detection rule generation failed: {e}"}), 500
 
 
+@app.route('/api/v1/llm/node_report', methods=['POST'])
+def llm_node_report():
+    """
+    Generate a formal intelligence report for a network node.
+    JSON body: {"ip": <str>}
+    """
+    data = request.get_json(silent=True) or {}
+    ip = data.get('ip') or request.args.get('ip')
+    
+    if not ip:
+        return jsonify({"error": "Provide ip"}), 400
+    
+    try:
+        result = engine.generate_node_report(ip)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Node report generation failed: {e}"}), 500
+
+
+@app.route('/api/v1/llm/http_report', methods=['POST'])
+def llm_http_report():
+    """
+    Generate a report analyzing HTTP activity.
+    JSON body: {"ip": <str optional>, "limit": <int>}
+    """
+    data = request.get_json(silent=True) or {}
+    ip = data.get('ip') or request.args.get('ip')
+    
+    try:
+        limit = int(data.get('limit', 100))
+    except Exception:
+        limit = 100
+    
+    try:
+        result = engine.generate_http_activity_report(ip=ip, limit=limit)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"HTTP report generation failed: {e}"}), 500
+
+
+@app.route('/api/v1/detection_rules')
+def list_detection_rules():
+    """
+    List stored detection rules.
+    Query params: source_type, rule_type, limit
+    """
+    source_type = request.args.get('source_type')
+    rule_type = request.args.get('rule_type')
+    
+    try:
+        limit = int(request.args.get('limit', 100))
+    except Exception:
+        limit = 100
+    
+    try:
+        rules = engine.get_detection_rules(source_type=source_type, rule_type=rule_type, limit=limit)
+        return jsonify({"rules": rules, "count": len(rules)}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to list detection rules: {e}"}), 500
+
+
+@app.route('/api/v1/detection_rules/save', methods=['POST'])
+def save_detection_rules():
+    """
+    Save generated detection rules to the database.
+    JSON body: {"session_id": <int>, "rules_data": <dict>}
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id')
+    rules_data = data.get('rules_data')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    if not rules_data:
+        return jsonify({"error": "Provide rules_data"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        result = engine.save_detection_rules(session_id, rules_data)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to save detection rules: {e}"}), 500
+
+
+@app.route('/api/v1/countermeasures/save', methods=['POST'])
+def save_countermeasures():
+    """
+    Save countermeasure recommendations to the database.
+    JSON body: {"session_id": <int>, "countermeasures_data": <dict>}
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get('session_id')
+    countermeasures_data = data.get('countermeasures_data')
+    
+    if not session_id:
+        return jsonify({"error": "Provide session_id"}), 400
+    
+    if not countermeasures_data:
+        return jsonify({"error": "Provide countermeasures_data"}), 400
+    
+    try:
+        session_id = int(session_id)
+    except Exception:
+        return jsonify({"error": "Invalid session_id"}), 400
+    
+    try:
+        result = engine.save_countermeasures(session_id, countermeasures_data)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to save countermeasures: {e}"}), 500
+
+
 # -------------------------
 # Vector search endpoints
 # -------------------------
@@ -1759,6 +1880,143 @@ def agent_get_messages():
     
     messages = agent_system.get_messages(since=since, limit=limit)
     return jsonify({"messages": messages, "count": len(messages)}), 200
+
+
+@app.route('/api/v1/agent/chat', methods=['POST'])
+def agent_chat():
+    """
+    Chat with the agent system - provides access to all agent tools.
+    JSON body: {
+        "message": "<user message>",
+        "conversation_id": <int optional>,
+        "context_type": "<context type optional>",
+        "context_id": "<context id optional>"
+    }
+    
+    The agent will interpret the message and execute appropriate tools.
+    """
+    if not _HAS_AGENT_SYSTEM or not agent_system:
+        return jsonify({"error": "Agent system not available"}), 503
+    
+    if not _HAS_MCP_SERVER or not mcp_server:
+        return jsonify({"error": "MCP server not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    message = data.get('message', '').strip()
+    conversation_id = data.get('conversation_id')
+    context_type = data.get('context_type')
+    context_id = data.get('context_id')
+    
+    if not message:
+        return jsonify({"error": "Provide a message"}), 400
+    
+    try:
+        # Get or create conversation
+        if conversation_id:
+            conv_data = engine.get_conversation(conversation_id)
+            if not conv_data:
+                return jsonify({"error": "Conversation not found"}), 404
+        else:
+            # Create new conversation
+            conv_data = engine.create_conversation(
+                title=f"Chat: {message[:50]}...",
+                context_type=context_type,
+                context_id=context_id,
+                initial_message=message
+            )
+            conversation_id = conv_data.get('id')
+        
+        # Get RAG context based on the message
+        rag_context = mcp_server.get_context_for_query(message, limit=3)
+        
+        # Determine which tools might be relevant based on the message
+        suggested_tools = []
+        message_lower = message.lower()
+        
+        if any(kw in message_lower for kw in ['ip', 'address', 'locate', 'where']):
+            suggested_tools.append('get_ip_intel')
+        if any(kw in message_lower for kw in ['session', 'honeypot', 'attack']):
+            suggested_tools.append('list_honeypot_sessions')
+            suggested_tools.append('get_honeypot_session')
+        if any(kw in message_lower for kw in ['similar', 'find', 'search']):
+            suggested_tools.append('search_similar_sessions')
+            suggested_tools.append('search_similar_attackers')
+        if any(kw in message_lower for kw in ['analyze', 'threat', 'analysis']):
+            suggested_tools.append('analyze_session')
+        if any(kw in message_lower for kw in ['countermeasure', 'defense', 'protect']):
+            suggested_tools.append('recommend_active_countermeasures')
+        if any(kw in message_lower for kw in ['rule', 'detect']):
+            suggested_tools.append('generate_detection_rules')
+        if any(kw in message_lower for kw in ['report', 'formal']):
+            suggested_tools.append('generate_threat_report')
+        
+        # Continue conversation with LLM
+        response_data = engine.continue_conversation(conversation_id, message)
+        
+        return jsonify({
+            "conversation_id": conversation_id,
+            "response": response_data.get('response', ''),
+            "rag_context": {
+                "similar_sessions_count": len(rag_context.get('similar_sessions', [])),
+                "similar_threats_count": len(rag_context.get('similar_threats', [])),
+                "similar_nodes_count": len(rag_context.get('similar_nodes', []))
+            },
+            "suggested_tools": suggested_tools,
+            "available_tools": [t['name'] for t in mcp_server.get_tools()[:10]]
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Chat failed: {e}"}), 500
+
+
+@app.route('/api/v1/agent/execute_tool', methods=['POST'])
+def agent_execute_tool_via_chat():
+    """
+    Execute a specific MCP tool via the chat interface.
+    JSON body: {
+        "tool": "<tool name>",
+        "params": {...},
+        "conversation_id": <int optional>
+    }
+    """
+    if not _HAS_MCP_SERVER or not mcp_server:
+        return jsonify({"error": "MCP server not available"}), 503
+    
+    data = request.get_json(silent=True) or {}
+    tool_name = data.get('tool')
+    params = data.get('params', {})
+    conversation_id = data.get('conversation_id')
+    confirmed = data.get('confirmed', False)
+    
+    if not tool_name:
+        return jsonify({"error": "Provide tool name"}), 400
+    
+    try:
+        # Execute the tool
+        result = mcp_server.execute_tool(tool_name, params, confirmed=confirmed)
+        
+        response = {
+            "tool": tool_name,
+            "success": result.success,
+            "data": result.data,
+            "error": result.error
+        }
+        
+        # If we have a conversation, add the tool execution to it
+        if conversation_id and result.success:
+            try:
+                engine.add_message_to_conversation(
+                    conversation_id,
+                    "assistant",
+                    f"Executed tool '{tool_name}': {json.dumps(result.data)[:500]}..."
+                )
+            except Exception:
+                pass  # Don't fail if conversation logging fails
+        
+        return jsonify(response), 200 if result.success else 400
+        
+    except Exception as e:
+        return jsonify({"error": f"Tool execution failed: {e}"}), 500
 
 
 if __name__ == '__main__':
