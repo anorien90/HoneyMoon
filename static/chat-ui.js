@@ -1,10 +1,17 @@
 // Chat UI module for agent integration
 // Provides chat interface with access to all agent tools
+// Enhanced with rich UI component rendering
 
 import { apiGet, apiPost } from './api.js';
 import * as honeypotApi from './honeypot.js';
 import * as ui from './ui.js';
 import { escapeHtml } from './util.js';
+import { 
+  renderSessionCard, renderSessionsList,
+  renderNodeCard, renderNodesList, summarizeNode,
+  renderThreatCard, renderThreatsList, summarizeThreat,
+  formatDataResponse, injectComponentStyles
+} from './components/index.js';
 
 const $ = id => document.getElementById(id);
 
@@ -92,9 +99,13 @@ function renderChatMessage(message, role, metadata = {}) {
   });
 }
 
-function formatChatContent(content, role) {
+function formatChatContent(content, role, metadata = {}) {
+  // Handle rich data objects with UI components
+  if (typeof content === 'object' && content !== null) {
+    return formatRichContent(content, metadata);
+  }
+  
   if (typeof content !== 'string') {
-    // Pretty print objects/arrays
     content = JSON.stringify(content, null, 2);
   }
   
@@ -122,6 +133,313 @@ function formatChatContent(content, role) {
   formatted = formatted.replace(/\n/g, '<br>');
   
   return formatted;
+}
+
+/**
+ * Format rich data objects into UI components
+ * @param {Object} data - Data object from API
+ * @param {Object} metadata - Additional metadata
+ * @returns {string} HTML string
+ */
+function formatRichContent(data, metadata = {}) {
+  const toolName = metadata.toolName || '';
+  
+  // Detect data type and render appropriate component
+  
+  // Session data
+  if (data.session || (data.id && data.src_ip && data.commands !== undefined)) {
+    const session = data.session || data;
+    const naturalLang = formatSessionNaturalLanguage(session);
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${escapeHtml(naturalLang)}</div>
+        ${renderSessionCard(session, { showActions: true, compact: false })}
+      </div>
+    `;
+  }
+  
+  // Sessions list
+  if (data.sessions && Array.isArray(data.sessions)) {
+    const count = data.sessions.length;
+    const naturalLang = `Found **${count}** honeypot sessions.${count > 10 ? ' Showing the most recent ones.' : ''}`;
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${formatChatContent(naturalLang, 'assistant')}</div>
+        ${renderSessionsList(data.sessions, { maxItems: 5, compact: true, title: '🍯 Sessions' })}
+      </div>
+    `;
+  }
+  
+  // Node data
+  if (data.node || (data.ip && (data.organization || data.isp))) {
+    const node = data.node || data;
+    const naturalLang = summarizeNode(node);
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${formatChatContent(naturalLang, 'assistant')}</div>
+        ${renderNodeCard(node, { showActions: true, compact: false })}
+      </div>
+    `;
+  }
+  
+  // Nodes list (similar attackers, search results)
+  if (data.similar_attackers || (data.results && data.results[0]?.ip)) {
+    const nodes = data.similar_attackers || data.results;
+    const naturalLang = `Found **${nodes.length}** similar ${data.similar_attackers ? 'attackers' : 'nodes'}.`;
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${formatChatContent(naturalLang, 'assistant')}</div>
+        ${renderNodesList(nodes, { maxItems: 5, compact: true, title: '🔗 Similar' })}
+      </div>
+    `;
+  }
+  
+  // Threat data
+  if (data.threat || (data.threat_type && data.severity)) {
+    const threat = data.threat || data;
+    const naturalLang = summarizeThreat(threat);
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${formatChatContent(naturalLang, 'assistant')}</div>
+        ${renderThreatCard(threat, { showActions: true, compact: false })}
+      </div>
+    `;
+  }
+  
+  // Threats list
+  if (data.threats && Array.isArray(data.threats)) {
+    const naturalLang = formatDataResponse('threats', data.threats);
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${formatChatContent(naturalLang, 'assistant')}</div>
+        ${renderThreatsList(data.threats, { maxItems: 3, compact: true, title: '⚠️ Threats' })}
+      </div>
+    `;
+  }
+  
+  // Analysis result
+  if (data.analyzed && (data.summary || data.threat_type)) {
+    const naturalLang = summarizeThreat(data);
+    return `
+      <div class="rich-response">
+        <div class="rich-response__natural">${formatChatContent(naturalLang, 'assistant')}</div>
+        ${renderThreatCard(data, { showActions: true, compact: false })}
+      </div>
+    `;
+  }
+  
+  // Formal report
+  if (data.report_sections || data.iocs || data.mitre_tactics) {
+    return formatFormalReportContent(data);
+  }
+  
+  // Countermeasures
+  if (data.recommendations || data.cowrie_actions || data.immediate_actions) {
+    return formatCountermeasuresContent(data);
+  }
+  
+  // Detection rules
+  if (data.rules || data.sigma_rules || data.firewall_rules) {
+    return formatDetectionRulesContent(data);
+  }
+  
+  // Status data
+  if (data.services || data.status === 'healthy' || data.status === 'degraded') {
+    return formatStatusContent(data);
+  }
+  
+  // Default: pretty print JSON with collapsible view
+  return `
+    <div class="rich-response rich-response--json">
+      <details>
+        <summary class="json-summary">📋 View Raw Data</summary>
+        <pre class="json-content">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+      </details>
+    </div>
+  `;
+}
+
+function formatSessionNaturalLanguage(session) {
+  let response = `Session **#${session.id}** from **${session.src_ip}**`;
+  
+  if (session.username) {
+    response += ` (user: ${session.username})`;
+  }
+  
+  if (session.city && session.country) {
+    response += ` in **${session.city}, ${session.country}**`;
+  }
+  
+  if (session.commands?.length) {
+    response += `. Executed **${session.commands.length}** commands`;
+  }
+  
+  if (session.duration) {
+    response += ` over ${session.duration.toFixed(1)}s`;
+  }
+  
+  return response + '.';
+}
+
+function formatFormalReportContent(report) {
+  let html = '<div class="rich-response rich-response--report">';
+  
+  // Header
+  html += `
+    <div class="report-header">
+      <span class="report-icon">📋</span>
+      <span class="report-title">Formal Forensic Report</span>
+      ${report.severity ? `<span class="report-severity severity-${report.severity.toLowerCase()}">${escapeHtml(report.severity)}</span>` : ''}
+    </div>
+  `;
+  
+  // Summary
+  if (report.summary) {
+    html += `<div class="report-summary">${escapeHtml(report.summary)}</div>`;
+  }
+  
+  // MITRE mapping
+  if (report.mitre_tactics?.length || report.mitre_techniques?.length) {
+    html += '<div class="report-mitre">';
+    html += '<div class="report-section-title">🎯 MITRE ATT&CK</div>';
+    if (report.mitre_tactics?.length) {
+      html += `<div class="mitre-tags">${report.mitre_tactics.map(t => `<span class="mitre-tactic">${escapeHtml(t)}</span>`).join('')}</div>`;
+    }
+    if (report.mitre_techniques?.length) {
+      html += `<div class="mitre-tags">${report.mitre_techniques.map(t => `<span class="mitre-technique">${escapeHtml(t)}</span>`).join('')}</div>`;
+    }
+    html += '</div>';
+  }
+  
+  // IOCs
+  if (report.iocs) {
+    html += '<div class="report-iocs">';
+    html += '<div class="report-section-title">🚨 Indicators of Compromise</div>';
+    const iocs = report.iocs;
+    if (iocs.network_iocs?.length) {
+      html += `<div class="ioc-group"><span class="ioc-label">Network:</span> ${iocs.network_iocs.slice(0, 3).map(i => `<code>${escapeHtml(i)}</code>`).join(' ')}</div>`;
+    }
+    if (iocs.host_iocs?.length) {
+      html += `<div class="ioc-group"><span class="ioc-label">Host:</span> ${iocs.host_iocs.slice(0, 3).map(i => `<code>${escapeHtml(i)}</code>`).join(' ')}</div>`;
+    }
+    html += '</div>';
+  }
+  
+  // Recommendations
+  if (report.recommended_actions?.length) {
+    html += '<div class="report-recommendations">';
+    html += '<div class="report-section-title">✅ Recommendations</div>';
+    html += `<ol class="recommendations-list">${report.recommended_actions.slice(0, 5).map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ol>`;
+    html += '</div>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+function formatCountermeasuresContent(data) {
+  let html = '<div class="rich-response rich-response--countermeasures">';
+  
+  html += `
+    <div class="countermeasures-header">
+      <span class="cm-icon">🛡️</span>
+      <span class="cm-title">Countermeasure Recommendations</span>
+    </div>
+  `;
+  
+  if (data.recommendations) {
+    const recs = typeof data.recommendations === 'string' ? [data.recommendations] : 
+                 Array.isArray(data.recommendations) ? data.recommendations :
+                 Object.values(data.recommendations);
+    
+    html += '<div class="countermeasures-list">';
+    recs.slice(0, 5).forEach((rec, i) => {
+      html += `<div class="cm-item"><span class="cm-num">${i + 1}</span><span>${escapeHtml(typeof rec === 'string' ? rec : JSON.stringify(rec))}</span></div>`;
+    });
+    html += '</div>';
+  }
+  
+  if (data.cowrie_actions?.length) {
+    html += '<div class="countermeasures-section">';
+    html += '<div class="cm-section-title">🍯 Cowrie Actions</div>';
+    html += data.cowrie_actions.slice(0, 3).map(a => `<code class="cm-action">${escapeHtml(a)}</code>`).join('');
+    html += '</div>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+function formatDetectionRulesContent(data) {
+  let html = '<div class="rich-response rich-response--rules">';
+  
+  html += `
+    <div class="rules-header">
+      <span class="rules-icon">📜</span>
+      <span class="rules-title">Detection Rules</span>
+    </div>
+  `;
+  
+  if (data.sigma_rules) {
+    html += '<div class="rules-section">';
+    html += '<div class="rules-section-title">Sigma Rules</div>';
+    html += `<pre class="rules-content">${escapeHtml(typeof data.sigma_rules === 'string' ? data.sigma_rules : JSON.stringify(data.sigma_rules, null, 2))}</pre>`;
+    html += '</div>';
+  }
+  
+  if (data.firewall_rules?.length) {
+    html += '<div class="rules-section">';
+    html += '<div class="rules-section-title">Firewall Rules</div>';
+    html += `<pre class="rules-content">${data.firewall_rules.map(r => escapeHtml(r)).join('\n')}</pre>`;
+    html += '</div>';
+  }
+  
+  if (data.rules && typeof data.rules === 'object') {
+    html += '<div class="rules-section">';
+    html += '<div class="rules-section-title">Generated Rules</div>';
+    html += `<pre class="rules-content">${escapeHtml(JSON.stringify(data.rules, null, 2))}</pre>`;
+    html += '</div>';
+  }
+  
+  html += '</div>';
+  return html;
+}
+
+function formatStatusContent(status) {
+  const isHealthy = status.status === 'healthy';
+  
+  let html = `<div class="rich-response rich-response--status">
+    <div class="status-header">
+      <span class="status-icon">${isHealthy ? '✅' : '⚠️'}</span>
+      <span class="status-title">System Status: ${isHealthy ? 'Healthy' : 'Degraded'}</span>
+    </div>
+  `;
+  
+  if (status.services) {
+    html += '<div class="status-services">';
+    Object.entries(status.services).forEach(([name, svc]) => {
+      const available = svc.available;
+      html += `
+        <div class="status-service ${available ? 'status-service--ok' : 'status-service--error'}">
+          <span class="service-status">${available ? '✓' : '✗'}</span>
+          <span class="service-name">${escapeHtml(name.replace(/_/g, ' '))}</span>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+  
+  if (status.hints?.length) {
+    html += '<div class="status-hints">';
+    html += '<div class="hints-title">💡 Hints</div>';
+    status.hints.forEach(hint => {
+      html += `<div class="status-hint">${escapeHtml(hint)}</div>`;
+    });
+    html += '</div>';
+  }
+  
+  html += '</div>';
+  return html;
 }
 
 function showTypingIndicator() {
@@ -1030,6 +1348,135 @@ export function showChatModal() {
         border-radius: 3px;
         font-size: 0.8em;
       }
+      
+      /* Rich response styles */
+      .rich-response {
+        margin: 0;
+      }
+      
+      .rich-response__natural {
+        margin-bottom: 8px;
+        font-size: 0.85rem;
+        line-height: 1.5;
+      }
+      
+      .rich-response--json .json-summary {
+        cursor: pointer;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+      }
+      
+      .rich-response--json .json-content {
+        font-size: 0.7rem;
+        max-height: 200px;
+        overflow-y: auto;
+        margin-top: 0.5rem;
+      }
+      
+      /* Report styles */
+      .rich-response--report {
+        padding: 8px;
+        background: var(--glass);
+        border-radius: 6px;
+      }
+      
+      .report-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      
+      .report-icon { font-size: 16px; }
+      .report-title { font-weight: 600; font-size: 13px; }
+      .report-severity {
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+      .report-severity.severity-critical { background: #ef4444; color: white; }
+      .report-severity.severity-high { background: #f59e0b; color: white; }
+      .report-severity.severity-medium { background: #eab308; color: black; }
+      .report-severity.severity-low { background: #22c55e; color: white; }
+      
+      .report-summary { font-size: 12px; line-height: 1.5; margin-bottom: 8px; }
+      .report-section-title { font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--text-muted); }
+      
+      .report-mitre, .report-iocs, .report-recommendations {
+        margin-top: 8px;
+        padding: 6px;
+        background: var(--bg-secondary);
+        border-radius: 4px;
+      }
+      
+      .mitre-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+      .mitre-tactic { font-size: 9px; padding: 2px 6px; background: rgba(59, 130, 246, 0.2); color: #3b82f6; border-radius: 3px; }
+      .mitre-technique { font-size: 9px; padding: 2px 6px; background: rgba(234, 179, 8, 0.2); color: #eab308; border-radius: 3px; }
+      
+      .ioc-group { font-size: 10px; margin-bottom: 4px; }
+      .ioc-label { color: var(--text-muted); margin-right: 4px; }
+      .ioc-group code { background: rgba(239, 68, 68, 0.1); padding: 1px 4px; border-radius: 2px; color: #f87171; }
+      
+      .recommendations-list { font-size: 11px; margin: 0; padding-left: 20px; }
+      .recommendations-list li { margin-bottom: 4px; }
+      
+      /* Countermeasures styles */
+      .rich-response--countermeasures {
+        padding: 8px;
+        background: var(--glass);
+        border-radius: 6px;
+        border-left: 3px solid #22c55e;
+      }
+      
+      .countermeasures-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .cm-icon { font-size: 16px; }
+      .cm-title { font-weight: 600; font-size: 13px; }
+      
+      .countermeasures-list { }
+      .cm-item { display: flex; gap: 8px; font-size: 11px; margin-bottom: 6px; align-items: flex-start; }
+      .cm-num { background: #22c55e; color: white; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
+      
+      .countermeasures-section { margin-top: 8px; }
+      .cm-section-title { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+      .cm-action { font-size: 10px; padding: 2px 6px; background: rgba(234, 179, 8, 0.1); border-radius: 3px; margin-right: 4px; }
+      
+      /* Detection rules styles */
+      .rich-response--rules {
+        padding: 8px;
+        background: var(--glass);
+        border-radius: 6px;
+        border-left: 3px solid #3b82f6;
+      }
+      
+      .rules-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .rules-icon { font-size: 16px; }
+      .rules-title { font-weight: 600; font-size: 13px; }
+      
+      .rules-section { margin-top: 8px; }
+      .rules-section-title { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+      .rules-content { font-size: 10px; background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 4px; overflow-x: auto; max-height: 150px; }
+      
+      /* Status styles */
+      .rich-response--status {
+        padding: 8px;
+        background: var(--glass);
+        border-radius: 6px;
+      }
+      
+      .status-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+      .status-icon { font-size: 16px; }
+      .status-title { font-weight: 600; font-size: 13px; }
+      
+      .status-services { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin-bottom: 8px; }
+      .status-service { display: flex; align-items: center; gap: 4px; font-size: 11px; padding: 4px 6px; border-radius: 4px; }
+      .status-service--ok { background: rgba(34, 197, 94, 0.1); }
+      .status-service--error { background: rgba(239, 68, 68, 0.1); }
+      .service-status { font-size: 10px; }
+      
+      .status-hints { margin-top: 8px; }
+      .hints-title { font-size: 10px; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+      .status-hint { font-size: 10px; padding: 4px; background: rgba(234, 179, 8, 0.1); border-radius: 3px; margin-bottom: 2px; }
     </style>
   `;
   
@@ -1057,6 +1504,9 @@ export function showChatModal() {
 // ============================================
 
 export function initChatUI() {
+  // Inject component styles for rich rendering
+  injectComponentStyles();
+  
   // Add chat button to agent panel
   const agentCard = document.getElementById('agentCard');
   if (agentCard) {
