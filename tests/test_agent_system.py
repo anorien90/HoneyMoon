@@ -435,3 +435,217 @@ class TestTaskEnums:
         assert TaskPriority.NORMAL.value == 2
         assert TaskPriority.HIGH.value == 3
         assert TaskPriority.CRITICAL.value == 4
+
+
+class TestNaturalLanguageTask:
+    """Tests for natural language task processing."""
+
+    @pytest.fixture
+    def mock_mcp_server(self):
+        """Create a mock MCP server."""
+        server = MagicMock()
+        server.get_tool.return_value = {
+            "name": "get_ip_intel",
+            "parameters": {"properties": {"ip": {"type": "string"}}}
+        }
+        server.execute_tool.return_value = MagicMock(
+            success=True,
+            data={"result": "test"},
+            error=None,
+            metadata={}
+        )
+        server.get_context_for_query.return_value = {
+            "similar_sessions": [],
+            "similar_threats": [],
+            "similar_nodes": []
+        }
+        return server
+
+    @pytest.fixture
+    def mock_engine(self):
+        """Create a mock forensic engine."""
+        engine = MagicMock()
+        engine.llm_analyzer = MagicMock()
+        engine.llm_analyzer.is_available.return_value = False
+        return engine
+
+    @pytest.fixture
+    def agent_system(self, mock_mcp_server, mock_engine):
+        """Create an agent system with mocked dependencies."""
+        from src.agent_system import AgentSystem
+        system = AgentSystem(mcp_server=mock_mcp_server, forensic_engine=mock_engine)
+        return system
+
+    def test_create_task_from_ip_request(self, agent_system):
+        """Test creating task from IP investigation request."""
+        task = agent_system.create_task_from_natural_language(
+            "investigate IP 192.168.1.100"
+        )
+        
+        assert task is not None
+        assert task.request_text == "investigate IP 192.168.1.100"
+        assert task.parameters.get("ip") == "192.168.1.100"
+        assert "investigation" in task.task_type.value.lower()
+
+    def test_create_task_from_session_request(self, agent_system):
+        """Test creating task from session investigation request."""
+        task = agent_system.create_task_from_natural_language(
+            "analyze session #123"
+        )
+        
+        assert task is not None
+        assert task.request_text == "analyze session #123"
+        assert task.parameters.get("session_id") == 123
+
+    def test_create_task_from_search_request(self, agent_system):
+        """Test creating task from search request."""
+        task = agent_system.create_task_from_natural_language(
+            "find similar attacks to brute force"
+        )
+        
+        assert task is not None
+        assert "search" in task.name.lower() or "find" in task.name.lower()
+
+    def test_create_task_from_threat_hunt_request(self, agent_system):
+        """Test creating task from threat hunting request."""
+        task = agent_system.create_task_from_natural_language(
+            "hunt for cryptominer activity"
+        )
+        
+        assert task is not None
+        assert "hunt" in task.name.lower() or "threat" in task.name.lower()
+
+    def test_create_task_from_monitoring_request(self, agent_system):
+        """Test creating task from monitoring request."""
+        task = agent_system.create_task_from_natural_language(
+            "monitor live activity for 30 minutes"
+        )
+        
+        assert task is not None
+        assert task.parameters.get("minutes") == 30
+
+    def test_create_task_from_countermeasure_request(self, agent_system):
+        """Test creating task from countermeasure request."""
+        task = agent_system.create_task_from_natural_language(
+            "plan countermeasures for session #456"
+        )
+        
+        assert task is not None
+        assert task.requires_confirmation is True
+        assert task.parameters.get("session_id") == 456
+
+    def test_create_task_from_report_request(self, agent_system):
+        """Test creating task from report request."""
+        task = agent_system.create_task_from_natural_language(
+            "generate formal report for session #789"
+        )
+        
+        assert task is not None
+        assert "report" in task.name.lower()
+        assert task.parameters.get("session_id") == 789
+
+    def test_create_task_with_context(self, agent_system):
+        """Test creating task with context."""
+        task = agent_system.create_task_from_natural_language(
+            "tell me more about this attack",
+            context_type="session",
+            context_id="42"
+        )
+        
+        assert task is not None
+        assert task.parameters.get("session_id") == 42
+
+    def test_task_has_nl_fields(self, agent_system):
+        """Test that created task has natural language fields."""
+        from src.agent_system import TaskType, TaskPriority
+        
+        task = agent_system.create_task(
+            task_type=TaskType.INVESTIGATION,
+            name="Test Task",
+            description="Test description",
+            parameters={},
+            priority=TaskPriority.NORMAL
+        )
+        
+        task_dict = task.dict()
+        
+        assert "request_text" in task_dict
+        assert "response_text" in task_dict
+        assert "suggested_actions" in task_dict
+        assert "context_data" in task_dict
+
+    def test_generate_task_response_investigation(self, agent_system):
+        """Test generating response for investigation task."""
+        from src.agent_system import AgentTask, TaskType, TaskStatus, TaskPriority
+        
+        task = AgentTask(
+            id="test-id",
+            task_type=TaskType.INVESTIGATION,
+            name="IP Investigation",
+            description="Test",
+            priority=TaskPriority.NORMAL,
+            parameters={"ip": "8.8.8.8"},
+            status=TaskStatus.COMPLETED,
+            result={
+                "findings": [
+                    {"type": "threat_detected", "details": {"threat_type": "SSH Brute Force", "severity": "high"}}
+                ],
+                "recommendations": ["Block the IP"],
+                "tools_used": [{"name": "get_ip_intel", "success": True}]
+            }
+        )
+        
+        response = agent_system.generate_task_response(task)
+        
+        assert "completed" in response.lower()
+        assert "threat" in response.lower() or "finding" in response.lower()
+
+    def test_generate_task_response_analysis(self, agent_system):
+        """Test generating response for analysis task."""
+        from src.agent_system import AgentTask, TaskType, TaskStatus, TaskPriority
+        
+        task = AgentTask(
+            id="test-id",
+            task_type=TaskType.ANALYSIS,
+            name="Session Analysis",
+            description="Test",
+            priority=TaskPriority.NORMAL,
+            parameters={"session_id": 123},
+            status=TaskStatus.COMPLETED,
+            result={
+                "threat_type": "Malware Download",
+                "severity": "critical",
+                "confidence": 0.95,
+                "summary": "Attacker downloaded malware",
+                "tactics": ["Initial Access", "Execution"]
+            }
+        )
+        
+        response = agent_system.generate_task_response(task)
+        
+        assert "completed" in response.lower()
+        assert "malware" in response.lower() or "threat" in response.lower()
+
+    def test_generate_suggested_actions(self, agent_system):
+        """Test generating suggested actions for completed task."""
+        from src.agent_system import AgentTask, TaskType, TaskStatus, TaskPriority
+        
+        task = AgentTask(
+            id="test-id",
+            task_type=TaskType.INVESTIGATION,
+            name="Investigation",
+            description="Test",
+            priority=TaskPriority.NORMAL,
+            parameters={},
+            status=TaskStatus.COMPLETED,
+            result={
+                "findings": [
+                    {"type": "threat_detected", "details": {"threat_type": "Botnet", "severity": "high"}}
+                ]
+            }
+        )
+        
+        suggestions = agent_system._generate_suggested_actions(task)
+        
+        assert len(suggestions) > 0
+        assert any("report" in s.lower() or "countermeasure" in s.lower() for s in suggestions)

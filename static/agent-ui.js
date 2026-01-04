@@ -421,6 +421,19 @@ export function initAgentUI() {
     startLiveMonitor();
   });
   
+  // Natural language task button - add dynamically to the quick actions
+  const quickActionsDiv = document.querySelector('#agentCard .card-body > div:nth-child(3)');
+  if (quickActionsDiv) {
+    const nlBtn = document.createElement('button');
+    nlBtn.id = 'agentNaturalTaskBtn';
+    nlBtn.className = 'small';
+    nlBtn.style.cssText = 'background: #6366f1; color: white;';
+    nlBtn.innerHTML = '🤖 Ask Agent';
+    nlBtn.title = 'Create task from natural language';
+    nlBtn.addEventListener('click', () => showNaturalLanguageTaskModal());
+    quickActionsDiv.appendChild(nlBtn);
+  }
+  
   // Task row click handler
   document.addEventListener('click', async (e) => {
     // Confirm button
@@ -466,26 +479,94 @@ export function initAgentUI() {
 }
 
 function showTaskDetailsModal(task) {
+  // Check if we have natural language response
+  const hasNaturalResponse = task.response_text || task.suggested_actions?.length;
+  
+  let resultHtml = '';
+  if (task.response_text) {
+    // Format the natural language response with markdown-like formatting
+    // First escape HTML to prevent XSS
+    let formatted = escapeHtml(task.response_text);
+    // Apply markdown-style bold formatting (safe after escaping since ** becomes &ast;&ast; if from user input)
+    // Only match escaped asterisks pattern from controlled server responses
+    formatted = formatted.replace(/\*\*([^*&<>]+)\*\*/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/\n/g, '<br>');
+    resultHtml = `
+      <div class="task-response" style="background: var(--glass); padding: 12px; border-radius: var(--radius); margin-bottom: 12px;">
+        <div class="small muted" style="margin-bottom: 8px;">🤖 Agent Response:</div>
+        <div style="font-size: 13px; line-height: 1.6;">${formatted}</div>
+      </div>
+    `;
+  }
+  
+  let suggestionsHtml = '';
+  if (task.suggested_actions?.length) {
+    suggestionsHtml = `
+      <div class="task-suggestions" style="margin-bottom: 12px;">
+        <div class="small muted" style="margin-bottom: 6px;">💡 Suggested Next Steps:</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          ${task.suggested_actions.map(action => 
+            `<button class="suggestion-btn small" data-action="${escapeHtml(action)}" style="background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; font-size: 11px;">
+              ${escapeHtml(action)}
+            </button>`
+          ).join('')}
+        </div>
+      </div>
+    `;
+  }
+  
   const html = `
     <div class="task-details">
-      <div class="mb-2"><strong>ID:</strong> ${escapeHtml(task.id)}</div>
-      <div class="mb-2"><strong>Type:</strong> ${escapeHtml(task.task_type)}</div>
-      <div class="mb-2"><strong>Status:</strong> ${getStatusIcon(task.status)} ${escapeHtml(task.status)}</div>
-      <div class="mb-2"><strong>Priority:</strong> ${task.priority}</div>
-      <div class="mb-2"><strong>Progress:</strong> ${Math.round((task.progress || 0) * 100)}%</div>
-      <div class="mb-2"><strong>Created:</strong> ${escapeHtml(task.created_at || '—')}</div>
-      ${task.started_at ? `<div class="mb-2"><strong>Started:</strong> ${escapeHtml(task.started_at)}</div>` : ''}
-      ${task.completed_at ? `<div class="mb-2"><strong>Completed:</strong> ${escapeHtml(task.completed_at)}</div>` : ''}
-      ${task.error ? `<div class="mb-2" style="color: #ef4444;"><strong>Error:</strong> ${escapeHtml(task.error)}</div>` : ''}
-      ${task.result ? `<div class="mb-2"><strong>Result:</strong><pre style="white-space: pre-wrap; font-size: 11px; max-height: 200px; overflow: auto;">${escapeHtml(JSON.stringify(task.result, null, 2))}</pre></div>` : ''}
+      <div class="task-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);">
+        <div>
+          <div style="font-size: 16px; font-weight: 600;">${getStatusIcon(task.status)} ${escapeHtml(task.name)}</div>
+          <div class="small muted">${escapeHtml(task.task_type)} • Priority: ${task.priority}</div>
+        </div>
+        <div style="text-align: right;">
+          <div class="small">${Math.round((task.progress || 0) * 100)}% complete</div>
+          <div class="progress-bar" style="width: 100px; height: 4px; background: var(--glass); border-radius: 2px; overflow: hidden;">
+            <div style="width: ${(task.progress || 0) * 100}%; height: 100%; background: ${task.status === 'completed' ? '#10b981' : task.status === 'failed' ? '#ef4444' : '#3b82f6'};"></div>
+          </div>
+        </div>
+      </div>
+      
+      ${task.request_text ? `
+        <div class="task-request" style="background: #3b82f620; padding: 10px; border-radius: var(--radius); margin-bottom: 12px; border-left: 3px solid #3b82f6;">
+          <div class="small muted" style="margin-bottom: 4px;">📝 Original Request:</div>
+          <div style="font-size: 13px;">${escapeHtml(task.request_text)}</div>
+        </div>
+      ` : ''}
+      
+      ${resultHtml}
+      ${suggestionsHtml}
+      
+      <details style="margin-bottom: 12px;">
+        <summary class="small muted" style="cursor: pointer;">📋 Task Details</summary>
+        <div style="padding: 10px; background: var(--glass); border-radius: var(--radius); margin-top: 8px; font-size: 12px;">
+          <div class="mb-1"><strong>ID:</strong> <code style="font-size: 10px;">${escapeHtml(task.id)}</code></div>
+          <div class="mb-1"><strong>Created:</strong> ${escapeHtml(formatTimestamp(task.created_at))}</div>
+          ${task.started_at ? `<div class="mb-1"><strong>Started:</strong> ${escapeHtml(formatTimestamp(task.started_at))}</div>` : ''}
+          ${task.completed_at ? `<div class="mb-1"><strong>Completed:</strong> ${escapeHtml(formatTimestamp(task.completed_at))}</div>` : ''}
+          ${task.error ? `<div class="mb-1" style="color: #ef4444;"><strong>Error:</strong> ${escapeHtml(task.error)}</div>` : ''}
+        </div>
+      </details>
+      
+      ${task.result ? `
+        <details>
+          <summary class="small muted" style="cursor: pointer;">🔍 Raw Result Data</summary>
+          <pre style="white-space: pre-wrap; font-size: 10px; max-height: 200px; overflow: auto; background: var(--glass); padding: 10px; border-radius: var(--radius); margin-top: 8px;">${escapeHtml(JSON.stringify(task.result, null, 2))}</pre>
+        </details>
+      ` : ''}
     </div>
-    <div class="mt-3">
+    <div class="mt-3" style="display: flex; gap: 8px; flex-wrap: wrap;">
       ${task.status === 'pending' ? '<button id="modalCancelTaskBtn" class="border rounded px-2 py-1 small" style="background: #ef4444; color: white;">Cancel Task</button>' : ''}
+      <button id="modalPinTaskBtn" class="border rounded px-2 py-1 small" style="background: var(--glass);">📌 Pin</button>
+      ${task.status === 'completed' ? '<button id="modalNewFromTaskBtn" class="border rounded px-2 py-1 small" style="background: #8b5cf6; color: white;">🔄 New Similar Task</button>' : ''}
     </div>
   `;
   
   ui.showModal({
-    title: `Task: ${task.name}`,
+    title: '',
     html,
     allowPin: true,
     onPin: () => ui.addPinnedCard(`Task: ${task.name}`, html)
@@ -495,6 +576,34 @@ function showTaskDetailsModal(task) {
     await cancelTask(task.id);
     ui.hideModal();
   });
+  
+  $('modalPinTaskBtn')?.addEventListener('click', () => {
+    ui.addPinnedCard(`Task: ${task.name}`, html);
+    ui.toast('Task pinned');
+  });
+  
+  $('modalNewFromTaskBtn')?.addEventListener('click', () => {
+    ui.hideModal();
+    showNaturalLanguageTaskModal(task.request_text || `Similar to: ${task.name}`);
+  });
+  
+  // Handle suggestion button clicks
+  document.querySelectorAll('.suggestion-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      ui.hideModal();
+      showNaturalLanguageTaskModal(action);
+    });
+  });
+}
+
+function formatTimestamp(ts) {
+  if (!ts) return '—';
+  try {
+    return new Date(ts).toLocaleString();
+  } catch (e) {
+    return ts;
+  }
 }
 
 function showCreateTaskModal(templateName) {
@@ -547,5 +656,151 @@ function showCreateTaskModal(templateName) {
     
     await createTaskFromTemplate(templateName, parameters, priority);
     ui.hideModal();
+  });
+}
+
+// ============================================
+// NATURAL LANGUAGE TASK CREATION
+// ============================================
+
+export async function createNaturalLanguageTask(requestText, contextType = null, contextId = null, priority = null) {
+  try {
+    const body = { request: requestText };
+    if (contextType) body.context_type = contextType;
+    if (contextId) body.context_id = contextId;
+    if (priority) body.priority = priority;
+    
+    const res = await apiPost('/api/v1/agent/task/natural', body);
+    
+    if (!res.ok) {
+      ui.toast(res.error || 'Failed to create task');
+      return null;
+    }
+    
+    const { task, interpretation, message } = res.data;
+    ui.toast(message || `Task created: ${task?.name || 'Unknown'}`);
+    listAgentTasks();
+    return task;
+  } catch (err) {
+    console.error('Failed to create natural language task:', err);
+    ui.toast('Failed to create task');
+    return null;
+  }
+}
+
+export function showNaturalLanguageTaskModal(prefillText = '') {
+  const html = `
+    <div class="natural-task-form">
+      <div class="mb-3">
+        <div class="small muted" style="margin-bottom: 8px;">🤖 Describe what you want to do in natural language:</div>
+        <textarea 
+          id="naturalTaskRequest" 
+          placeholder="Examples:
+• Investigate IP 192.168.1.100
+• Analyze session #123 and find similar attacks
+• Search for brute force attempts
+• Generate a report for session 45
+• Find attackers similar to 10.0.0.1
+• Monitor live activity for 30 minutes
+• Plan countermeasures for session #78"
+          style="width: 100%; min-height: 120px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); resize: vertical;"
+        >${escapeHtml(prefillText)}</textarea>
+      </div>
+      
+      <details style="margin-bottom: 12px;">
+        <summary class="small muted" style="cursor: pointer;">⚙️ Advanced Options</summary>
+        <div style="padding: 10px; background: var(--glass); border-radius: var(--radius); margin-top: 8px;">
+          <div class="mb-2">
+            <label class="small muted">Context Type (optional):</label>
+            <select id="naturalTaskContext" style="width: 100%;">
+              <option value="">None</option>
+              <option value="session">Session</option>
+              <option value="node">Node/IP</option>
+              <option value="threat">Threat</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="small muted">Context ID (session ID, IP, etc.):</label>
+            <input id="naturalTaskContextId" type="text" placeholder="e.g., 123 or 192.168.1.1" style="width: 100%;" />
+          </div>
+          <div class="mb-2">
+            <label class="small muted">Priority:</label>
+            <select id="naturalTaskPriority" style="width: 100%;">
+              <option value="">Auto-detect</option>
+              <option value="low">Low</option>
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+        </div>
+      </details>
+      
+      <div style="display: flex; gap: 8px;">
+        <button id="modalNaturalTaskBtn" class="border rounded px-2 py-1" style="background: #6366f1; color: white; flex: 1;">
+          🚀 Create Task
+        </button>
+        <button id="modalNaturalChatBtn" class="border rounded px-2 py-1" style="background: var(--glass); flex: 1;">
+          💬 Chat Instead
+        </button>
+      </div>
+      
+      <div class="small muted" style="margin-top: 12px; text-align: center;">
+        Tasks run in background • Results include natural language summaries
+      </div>
+    </div>
+  `;
+  
+  ui.showModal({
+    title: '🤖 Create Task from Natural Language',
+    html
+  });
+  
+  // Focus the textarea
+  setTimeout(() => $('naturalTaskRequest')?.focus(), 100);
+  
+  $('modalNaturalTaskBtn')?.addEventListener('click', async () => {
+    const request = $('naturalTaskRequest')?.value?.trim();
+    if (!request) {
+      ui.toast('Please enter a request');
+      return;
+    }
+    
+    const contextType = $('naturalTaskContext')?.value || null;
+    const contextId = $('naturalTaskContextId')?.value?.trim() || null;
+    const priority = $('naturalTaskPriority')?.value || null;
+    
+    ui.hideModal();
+    await createNaturalLanguageTask(request, contextType, contextId, priority);
+  });
+  
+  $('modalNaturalChatBtn')?.addEventListener('click', () => {
+    const request = $('naturalTaskRequest')?.value?.trim();
+    ui.hideModal();
+    // Import and show chat modal from chat-ui
+    import('./chat-ui.js').then(module => {
+      module.showChatModal();
+      // Pre-fill the chat input if we have a request - poll for element availability
+      if (request) {
+        const waitForChatInput = (attempts = 0) => {
+          const chatInput = document.getElementById('chatInput');
+          if (chatInput) {
+            chatInput.value = request;
+            chatInput.focus();
+          } else if (attempts < 10) {
+            requestAnimationFrame(() => waitForChatInput(attempts + 1));
+          }
+        };
+        requestAnimationFrame(waitForChatInput);
+      }
+    });
+  });
+  
+  // Handle Enter key
+  $('naturalTaskRequest')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      e.preventDefault();
+      $('modalNaturalTaskBtn')?.click();
+    }
   });
 }

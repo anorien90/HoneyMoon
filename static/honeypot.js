@@ -146,8 +146,8 @@ export async function saveCountermeasures(sessionId, countermeasuresData) {
 }
 
 // Agent chat endpoints
-export async function agentChat(message, conversationId = null, contextType = null, contextId = null) {
-  const body = { message };
+export async function agentChat(message, conversationId = null, contextType = null, contextId = null, autoExecute = false, includeContextData = false) {
+  const body = { message, auto_execute: autoExecute, include_context_data: includeContextData };
   if (conversationId) body.conversation_id = conversationId;
   if (contextType) body.context_type = contextType;
   if (contextId) body.context_id = contextId;
@@ -158,4 +158,25 @@ export async function agentExecuteTool(tool, params = {}, conversationId = null,
   const body = { tool, params, confirmed };
   if (conversationId) body.conversation_id = conversationId;
   return apiPost('/api/v1/agent/execute_tool', body, { timeout: 120000, retries: 1 });
+}
+
+// Natural language task endpoints
+export async function createNaturalTask(request, contextType = null, contextId = null, priority = null) {
+  const body = { request };
+  if (contextType) body.context_type = contextType;
+  if (contextId) body.context_id = contextId;
+  if (priority) body.priority = priority;
+  return apiPost('/api/v1/agent/task/natural', body, { timeout: 120000, retries: 1 });
+}
+
+export async function getTaskResult(taskId, format = 'full') {
+  return apiGet(`/api/v1/agent/task/result?id=${encodeURIComponent(taskId)}&format=${format}`, { timeout: 30000, retries: 2 });
+}
+
+export async function getAgentSuggestions(contextType = null, contextId = null, query = '') {
+  const params = new URLSearchParams();
+  if (contextType) params.append('context_type', contextType);
+  if (contextId) params.append('context_id', contextId);
+  if (query) params.append('query', query);
+  return apiGet(`/api/v1/agent/suggestions?${params}`, { timeout: 30000, retries: 2 });
 }
