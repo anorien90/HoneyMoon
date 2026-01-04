@@ -2279,18 +2279,21 @@ class ForensicEngine:
             filters=filters
         )
 
-    def search_similar_threats(self, query: str, limit: int = 10, filters: dict = None) -> list:
+    def search_similar_threats(self, query: str = None, limit: int = 10, filters: dict = None) -> list:
         """
         Search for similar threat analyses.
         
         Args:
-            query: Text query describing the threat
+            query: Text query describing the threat (optional, returns empty if not provided)
             limit: Maximum number of results
             filters: Optional filters
             
         Returns:
             List of similar threats with scores
         """
+        if not query:
+            return []
+        
         if not self.vector_store or not self.vector_store.is_available():
             return []
         
