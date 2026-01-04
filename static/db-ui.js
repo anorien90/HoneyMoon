@@ -1035,8 +1035,10 @@ export function viewDetectionRuleDetail(rule) {
       document.getElementById('copyRuleBtn')?.addEventListener('click', () => {
         navigator.clipboard.writeText(JSON.stringify(rule, null, 2)).then(() => {
           ui.toast('Rule copied to clipboard');
-        }).catch(() => {
-          ui.toast('Failed to copy rule');
+        }).catch(err => {
+          console.error('Clipboard write failed:', err);
+          const reason = err.name === 'NotAllowedError' ? ' (permission denied)' : '';
+          ui.toast(`Copy failed${reason} - try selecting text manually`);
         });
       });
     }
@@ -1147,8 +1149,10 @@ export function viewCountermeasureDetail(cm) {
       document.getElementById('copyCmBtn')?.addEventListener('click', () => {
         navigator.clipboard.writeText(JSON.stringify(cm, null, 2)).then(() => {
           ui.toast('Countermeasure copied to clipboard');
-        }).catch(() => {
-          ui.toast('Failed to copy countermeasure');
+        }).catch(err => {
+          console.error('Clipboard write failed:', err);
+          const reason = err.name === 'NotAllowedError' ? ' (permission denied)' : '';
+          ui.toast(`Copy failed${reason} - try selecting text manually`);
         });
       });
     }

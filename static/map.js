@@ -292,7 +292,7 @@ export function addMarkerForNode(node, role = 'middle') {
   
   m.nodeIp = node.ip;
   m._nodeData = node;
-  m._markerRole = role;  // Store role for filtering
+  m._markerRole = role;  // Store role for layer group management
   
   try {
     m.bindPopup(formatPopup(node), { closeButton: true, autoPan: true });

@@ -865,8 +865,10 @@ function showDetectionRulesModal(data, sessionId) {
           navigator.clipboard.writeText(dataStr).then(() => {
             ui.toast('Rules copied to clipboard');
           }).catch(err => {
-            console.error('Failed to copy:', err);
-            ui.toast('Failed to copy rules');
+            console.error('Clipboard write failed:', err);
+            // Provide more specific feedback based on error type
+            const reason = err.name === 'NotAllowedError' ? ' (permission denied)' : '';
+            ui.toast(`Copy failed${reason} - try selecting text manually`);
           });
         });
       }
