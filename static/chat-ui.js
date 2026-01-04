@@ -271,7 +271,12 @@ async function processCommand(input) {
         return true;
       case '/analyze':
         if (args) {
-          await executeTool('analyze_session', { session_id: parseInt(args, 10) });
+          const sessionId = parseInt(args, 10);
+          if (isNaN(sessionId)) {
+            renderChatMessage('Invalid session ID. Usage: /analyze [session_id]', 'error');
+          } else {
+            await handleToolClick('analyze_session', { session_id: sessionId });
+          }
         } else {
           renderChatMessage('Usage: /analyze [session_id]', 'system');
         }

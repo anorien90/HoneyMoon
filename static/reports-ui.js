@@ -471,8 +471,10 @@ function showHttpReportModal(data, ip) {
   // Threat assessment details
   if (data.threat_assessment) {
     const ta = data.threat_assessment;
+    const taLevel = (ta.threat_level || 'unknown').toLowerCase();
+    const taColor = severityColors[taLevel] || '#6b7280';
     html += `<div class="mt-3"><strong>🎯 Threat Assessment</strong><div class="text-xs mt-1 p-2 border rounded" style="background: var(--glass);">`;
-    html += `<div><strong>Threat Level:</strong> <span style="color: ${severityColor}; font-weight: 600;">${escapeHtml(ta.threat_level || 'Unknown')}</span></div>`;
+    html += `<div><strong>Threat Level:</strong> <span style="color: ${taColor}; font-weight: 600;">${escapeHtml(ta.threat_level || 'Unknown')}</span></div>`;
     if (ta.confidence != null) {
       html += `<div><strong>Confidence:</strong> ${Math.round(ta.confidence * 100)}%</div>`;
     }
