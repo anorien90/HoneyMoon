@@ -450,7 +450,16 @@ async function promptForToolParams(toolName, params) {
     if (!value) return false;
     
     const paramName = config.required[0];
-    params[paramName] = config.type === 'number' ? parseInt(value, 10) : value;
+    if (config.type === 'number') {
+      const numValue = parseInt(value, 10);
+      if (isNaN(numValue)) {
+        renderChatMessage(`Invalid number: "${value}". Please enter a valid number.`, 'error');
+        return false;
+      }
+      params[paramName] = numValue;
+    } else {
+      params[paramName] = value;
+    }
   }
   
   return true;
