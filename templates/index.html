@@ -158,6 +158,17 @@
           <button id="honeypotFlowsBtn">Flows</button>
         </div>
         
+        <!-- AI Quick Actions for Sessions -->
+        <div class="ai-actions-panel" style="margin-bottom: 0.75rem; padding: 0.5rem; background: var(--glass); border-radius: var(--radius);">
+          <div class="small muted" style="margin-bottom: 0.5rem;">🤖 AI Quick Actions</div>
+          <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+            <button id="honeypotAnalyzeSelectedBtn" class="small ai-action-btn" title="Analyze selected session">🔍 Analyze</button>
+            <button id="honeypotUnifyThreatsBtn" class="small ai-action-btn" title="Unify multiple threats">🔗 Unify</button>
+            <button id="honeypotBulkAnalyzeBtn" class="small ai-action-btn" title="Bulk analyze recent sessions">📊 Bulk</button>
+            <button id="honeypotChatBtn" class="small ai-action-btn" title="Ask AI about honeypot data">💬 Chat</button>
+          </div>
+        </div>
+        
         <div id="honeypotSessionsList" class="compact-scroll small muted">(click List)</div>
         <div id="honeypotFlowsList" class="compact-scroll small muted" style="margin-top: 0.5rem;"></div>
         
@@ -210,6 +221,18 @@
           <div><strong>Last Seen:</strong> <span id="selLast">—</span></div>
           <div><strong>Seen Count:</strong> <span id="selCount">—</span></div>
         </div>
+        
+        <!-- AI Actions for Selected Node -->
+        <div id="selectedNodeActions" class="ai-actions-panel" style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+          <div class="small muted" style="margin-bottom: 0.5rem;">🤖 AI Actions</div>
+          <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+            <button id="nodeIntelBtn" class="small ai-action-btn" title="Get AI intelligence report">🔍 Intel</button>
+            <button id="nodeReportBtn" class="small ai-action-btn" title="Generate formal report">📋 Report</button>
+            <button id="nodeSimilarBtn" class="small ai-action-btn" title="Find similar attackers">🔗 Similar</button>
+            <button id="nodeChatBtn" class="small ai-action-btn" title="Ask AI about this node">💬 Chat</button>
+          </div>
+        </div>
+        
         <div id="recentAccesses" class="compact-scroll small muted" style="margin-top: 0.75rem;"></div>
       </div>
     </div>

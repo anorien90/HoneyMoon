@@ -772,6 +772,7 @@ async function init() {
     initPopupActionDelegates();
     initCardCollapseHandlers();
     initAutoRefresh();
+    initAIActionHandlers();  // Initialize AI action buttons
     
     // Resize handler
     window.addEventListener('resize', ui.debounce(() => {
@@ -786,6 +787,288 @@ async function init() {
     console.error('Init error:', err);
     ui.toast('Application initialization failed');
   }
+}
+
+// ============================================
+// AI ACTION HANDLERS
+// ============================================
+
+function initAIActionHandlers() {
+  // Selected Node AI Actions
+  $('nodeIntelBtn')?.addEventListener('click', async () => {
+    const node = window.selectedNode;
+    if (!node?.ip) return ui.toast('Select a node first');
+    
+    ui.setLoading(true, 'Generating intelligence report...');
+    try {
+      const res = await honeypotApi.generateNodeReport(node.ip);
+      ui.setLoading(false);
+      if (res.ok && res.data) {
+        // Show the node report modal (defined in reports-ui.js)
+        import('./reports-ui.js').then(m => {
+          // The showNodeReportModal is not exported, so we'll use the chat UI
+          chatUI.showChatModal();
+          setTimeout(() => {
+            const input = $('chatInput');
+            if (input) {
+              input.value = `/ip ${node.ip}`;
+              input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+            }
+          }, 300);
+        });
+        ui.toast('Intelligence report generated');
+      } else {
+        ui.toast(res.error || 'Report generation failed');
+      }
+    } catch (err) {
+      ui.setLoading(false);
+      ui.toast('Report generation failed');
+      console.error('nodeIntelBtn error:', err);
+    }
+  });
+  
+  $('nodeReportBtn')?.addEventListener('click', async () => {
+    const node = window.selectedNode;
+    if (!node?.ip) return ui.toast('Select a node first');
+    
+    ui.setLoading(true, 'Generating formal report...');
+    try {
+      const res = await honeypotApi.generateNodeReport(node.ip);
+      ui.setLoading(false);
+      if (res.ok && res.data) {
+        analysisUI.showNodeReportResult(res.data, node.ip);
+        ui.toast('Report generated');
+      } else {
+        ui.toast(res.error || 'Report generation failed');
+      }
+    } catch (err) {
+      ui.setLoading(false);
+      ui.toast('Report generation failed');
+      console.error('nodeReportBtn error:', err);
+    }
+  });
+  
+  $('nodeSimilarBtn')?.addEventListener('click', async () => {
+    const node = window.selectedNode;
+    if (!node?.ip) return ui.toast('Select a node first');
+    
+    ui.setLoading(true, 'Finding similar attackers...');
+    try {
+      const res = await apiGet(`/api/v1/similar/attackers?ip=${encodeURIComponent(node.ip)}&limit=10`);
+      ui.setLoading(false);
+      if (res.ok && res.data?.similar_attackers?.length) {
+        showSimilarAttackersModal(node.ip, res.data.similar_attackers);
+      } else {
+        ui.toast('No similar attackers found');
+      }
+    } catch (err) {
+      ui.setLoading(false);
+      ui.toast('Search failed');
+      console.error('nodeSimilarBtn error:', err);
+    }
+  });
+  
+  $('nodeChatBtn')?.addEventListener('click', () => {
+    const node = window.selectedNode;
+    chatUI.showChatModal();
+    if (node?.ip) {
+      setTimeout(() => {
+        const input = $('chatInput');
+        if (input) {
+          input.value = `Tell me about IP ${node.ip}`;
+          input.focus();
+        }
+      }, 300);
+    }
+  });
+  
+  // Honeypot AI Actions
+  $('honeypotAnalyzeSelectedBtn')?.addEventListener('click', async () => {
+    const selectedSession = honeypotUI.getSelectedSession?.();
+    if (!selectedSession?.id) {
+      ui.toast('Select a session first from the list');
+      return;
+    }
+    
+    // Trigger analysis via the analysis panel
+    const sessionIdInput = $('analysisSessionId');
+    if (sessionIdInput) {
+      sessionIdInput.value = selectedSession.id;
+      $('analyzeSessionBtn')?.click();
+    }
+  });
+  
+  $('honeypotUnifyThreatsBtn')?.addEventListener('click', () => {
+    chatUI.showChatModal();
+    setTimeout(() => {
+      const input = $('chatInput');
+      if (input) {
+        input.value = 'Unify the most recent threats and create a unified profile';
+        input.focus();
+      }
+    }, 300);
+  });
+  
+  $('honeypotBulkAnalyzeBtn')?.addEventListener('click', () => {
+    chatUI.showChatModal();
+    setTimeout(() => {
+      const input = $('chatInput');
+      if (input) {
+        input.value = '/sessions';
+        input.focus();
+      }
+    }, 300);
+  });
+  
+  $('honeypotChatBtn')?.addEventListener('click', () => {
+    chatUI.showChatModal();
+    setTimeout(() => {
+      const input = $('chatInput');
+      if (input) {
+        input.value = 'What are the most interesting recent honeypot sessions?';
+        input.focus();
+      }
+    }, 300);
+  });
+  
+  // Delegate click handling for dynamically added AI action buttons
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    
+    const action = btn.dataset.action;
+    const sessionId = btn.dataset.sessionId;
+    const ip = btn.dataset.ip;
+    const threatId = btn.dataset.threatId;
+    
+    // Session card actions
+    if (sessionId) {
+      switch (action) {
+        case 'analyze':
+          const sessionInput = $('analysisSessionId');
+          if (sessionInput) {
+            sessionInput.value = sessionId;
+            $('analyzeSessionBtn')?.click();
+          }
+          break;
+        case 'report':
+          const reportInput = $('analysisSessionId');
+          if (reportInput) {
+            reportInput.value = sessionId;
+            $('formalReportBtn')?.click();
+          }
+          break;
+        case 'similar':
+          ui.setLoading(true, 'Searching similar sessions...');
+          try {
+            const res = await apiGet(`/api/v1/vector/search/sessions?session_id=${sessionId}&limit=10`);
+            ui.setLoading(false);
+            if (res.ok && res.data?.results?.length) {
+              ui.showModal({
+                title: `Similar Sessions to #${sessionId}`,
+                html: formatSimilarResultsHtml(res.data.results, 'session'),
+                allowPin: true
+              });
+            } else {
+              ui.toast('No similar sessions found');
+            }
+          } catch (err) {
+            ui.setLoading(false);
+            ui.toast('Search failed');
+          }
+          break;
+        case 'countermeasures':
+          const cmInput = $('analysisSessionId');
+          if (cmInput) {
+            cmInput.value = sessionId;
+            $('countermeasuresBtn')?.click();
+          }
+          break;
+      }
+    }
+    
+    // Node card actions
+    if (ip && !sessionId) {
+      switch (action) {
+        case 'intel':
+          ui.setLoading(true, 'Getting intelligence...');
+          try {
+            const res = await honeypotApi.generateNodeReport(ip);
+            ui.setLoading(false);
+            if (res.ok && res.data) {
+              analysisUI.showNodeReportResult(res.data, ip);
+            } else {
+              ui.toast(res.error || 'Intel fetch failed');
+            }
+          } catch (err) {
+            ui.setLoading(false);
+            ui.toast('Intel fetch failed');
+          }
+          break;
+        case 'trace':
+          const ipInput = elements.ipInput();
+          if (ipInput) {
+            ipInput.value = ip;
+            traceIP();
+          }
+          break;
+      }
+    }
+    
+    // Threat card actions
+    if (threatId) {
+      switch (action) {
+        case 'countermeasure':
+          // Execute countermeasure planning
+          chatUI.showChatModal();
+          setTimeout(() => {
+            const input = $('chatInput');
+            if (input) {
+              input.value = `Generate countermeasures for threat #${threatId}`;
+              input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+            }
+          }, 300);
+          break;
+        case 'rules':
+          // Generate detection rules
+          chatUI.showChatModal();
+          setTimeout(() => {
+            const input = $('chatInput');
+            if (input) {
+              input.value = `Generate detection rules for threat #${threatId}`;
+              input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+            }
+          }, 300);
+          break;
+      }
+    }
+  });
+}
+
+function formatSimilarResultsHtml(results, type) {
+  if (!results?.length) return '<div class="muted">No similar items found</div>';
+  
+  let html = '<div class="similar-results">';
+  results.forEach((item, i) => {
+    const score = item.score ? `(${Math.round(item.score * 100)}% match)` : '';
+    if (type === 'session') {
+      html += `
+        <div class="similar-result" style="padding: 8px; border-bottom: 1px solid var(--border);">
+          <div><strong>#${item.id || item.session_id || i + 1}</strong> ${score}</div>
+          <div class="muted small">${escapeHtml(item.src_ip || '—')} • ${escapeHtml(item.username || '—')}</div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="similar-result" style="padding: 8px; border-bottom: 1px solid var(--border);">
+          <div><strong>${escapeHtml(item.ip || item.id || i + 1)}</strong> ${score}</div>
+          <div class="muted small">${escapeHtml(item.organization || item.summary || '—')}</div>
+        </div>
+      `;
+    }
+  });
+  html += '</div>';
+  return html;
 }
 
 init();
