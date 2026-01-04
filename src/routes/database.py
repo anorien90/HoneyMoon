@@ -16,14 +16,19 @@ _ISP = None
 _OutgoingConnection = None
 _HoneypotSession = None
 _HoneypotNetworkFlow = None
+_ThreatAnalysis = None
+_DetectionRuleRecord = None
+_CountermeasureRecord = None
 
 
 def init_database_routes(engine, network_node=None, web_access=None, analysis_session=None,
                          isp=None, outgoing_connection=None, honeypot_session=None,
-                         honeypot_flow=None):
+                         honeypot_flow=None, threat_analysis=None, detection_rule=None,
+                         countermeasure=None):
     """Initialize database routes with dependencies."""
     global _engine, _NetworkNode, _WebAccess, _AnalysisSession, _ISP
     global _OutgoingConnection, _HoneypotSession, _HoneypotNetworkFlow
+    global _ThreatAnalysis, _DetectionRuleRecord, _CountermeasureRecord
     _engine = engine
     _NetworkNode = network_node
     _WebAccess = web_access
@@ -32,6 +37,9 @@ def init_database_routes(engine, network_node=None, web_access=None, analysis_se
     _OutgoingConnection = outgoing_connection
     _HoneypotSession = honeypot_session
     _HoneypotNetworkFlow = honeypot_flow
+    _ThreatAnalysis = threat_analysis
+    _DetectionRuleRecord = detection_rule
+    _CountermeasureRecord = countermeasure
 
 
 @database_bp.route('/api/v1/isp')
@@ -261,6 +269,53 @@ def db_search():
             rows = qobj.order_by(_OutgoingConnection.timestamp.desc()).limit(limit).all()
             return jsonify({"type": "outgoing_connections", "query": q, "results": [r.dict() for r in rows]}), 200
 
+        # Search for threat analyses (reports)
+        if typ in ('threat', 'threats', 'report', 'reports', 'threat_analysis'):
+            if _ThreatAnalysis is None:
+                return jsonify({"error": "ThreatAnalysis model not available"}), 500
+            qlike = f"%{q}%"
+            qobj = _engine.db.query(_ThreatAnalysis)
+            if q:
+                qobj = qobj.filter(
+                    (_ThreatAnalysis.source_ip.ilike(qlike)) |
+                    (_ThreatAnalysis.threat_type.ilike(qlike)) |
+                    (_ThreatAnalysis.severity.ilike(qlike)) |
+                    (_ThreatAnalysis.summary.ilike(qlike))
+                )
+            rows = qobj.order_by(_ThreatAnalysis.analyzed_at.desc()).limit(limit).all()
+            return jsonify({"type": "threat_analyses", "query": q, "results": [r.dict() for r in rows]}), 200
+
+        # Search for detection rules
+        if typ in ('detection_rule', 'detection_rules', 'rules'):
+            if _DetectionRuleRecord is None:
+                return jsonify({"error": "DetectionRuleRecord model not available"}), 500
+            qlike = f"%{q}%"
+            qobj = _engine.db.query(_DetectionRuleRecord)
+            if q:
+                qobj = qobj.filter(
+                    (_DetectionRuleRecord.source_ip.ilike(qlike)) |
+                    (_DetectionRuleRecord.name.ilike(qlike)) |
+                    (_DetectionRuleRecord.rule_type.ilike(qlike)) |
+                    (_DetectionRuleRecord.rule_content.ilike(qlike))
+                )
+            rows = qobj.order_by(_DetectionRuleRecord.created_at.desc()).limit(limit).all()
+            return jsonify({"type": "detection_rules", "query": q, "results": [r.dict() for r in rows]}), 200
+
+        # Search for countermeasures
+        if typ in ('countermeasure', 'countermeasures'):
+            if _CountermeasureRecord is None:
+                return jsonify({"error": "CountermeasureRecord model not available"}), 500
+            qlike = f"%{q}%"
+            qobj = _engine.db.query(_CountermeasureRecord)
+            if q:
+                qobj = qobj.filter(
+                    (_CountermeasureRecord.name.ilike(qlike)) |
+                    (_CountermeasureRecord.description.ilike(qlike)) |
+                    (_CountermeasureRecord.status.ilike(qlike))
+                )
+            rows = qobj.order_by(_CountermeasureRecord.created_at.desc()).limit(limit).all()
+            return jsonify({"type": "countermeasures", "query": q, "results": [r.dict() for r in rows]}), 200
+
         return jsonify({"error": "Unknown type parameter"}), 400
     except Exception as e:
         return jsonify({"error": f"DB search failed: {e}"}), 500
@@ -319,9 +374,50 @@ def db_node():
     except Exception:
         honeypot_sessions = []
 
+    # Get threat analyses associated with this IP
+    threat_analyses = []
+    try:
+        if _ThreatAnalysis is not None:
+            rows = _engine.db.query(_ThreatAnalysis).filter(
+                _ThreatAnalysis.source_ip == ip
+            ).order_by(_ThreatAnalysis.analyzed_at.desc()).limit(limit).all()
+            threat_analyses = [r.dict() for r in rows]
+    except Exception:
+        threat_analyses = []
+
+    # Get detection rules associated with this IP
+    detection_rules = []
+    try:
+        if _DetectionRuleRecord is not None:
+            rows = _engine.db.query(_DetectionRuleRecord).filter(
+                _DetectionRuleRecord.source_ip == ip
+            ).order_by(_DetectionRuleRecord.created_at.desc()).limit(limit).all()
+            detection_rules = [r.dict() for r in rows]
+    except Exception:
+        detection_rules = []
+
+    # Get countermeasures for this IP
+    # First try to get via threat analyses, then check if there are any linked to sessions from this IP
+    countermeasures = []
+    try:
+        if _CountermeasureRecord is not None:
+            # Get countermeasures via threat analyses
+            if threat_analyses:
+                threat_ids = [t.get('id') for t in threat_analyses if t.get('id')]
+                if threat_ids:
+                    rows = _engine.db.query(_CountermeasureRecord).filter(
+                        _CountermeasureRecord.threat_analysis_id.in_(threat_ids)
+                    ).order_by(_CountermeasureRecord.created_at.desc()).limit(limit).all()
+                    countermeasures = [r.dict() for r in rows]
+    except Exception:
+        countermeasures = []
+
     return jsonify({
         "node": node_dict,
         "recent_accesses": accesses,
         "analyses": analyses,
-        "honeypot_sessions": honeypot_sessions
+        "honeypot_sessions": honeypot_sessions,
+        "threat_analyses": threat_analyses,
+        "detection_rules": detection_rules,
+        "countermeasures": countermeasures
     }), 200

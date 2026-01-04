@@ -25,7 +25,8 @@ def register_all_blueprints(app, engine, agent_system=None, mcp_server=None,
                              network_node_model=None, web_access_model=None,
                              analysis_session_model=None, isp_model=None,
                              outgoing_connection_model=None, threat_analysis_model=None,
-                             attacker_cluster_model=None, task_type=None,
+                             attacker_cluster_model=None, countermeasure_model=None,
+                             detection_rule_model=None, task_type=None,
                              task_status=None, task_priority=None, tool_category=None):
     """
     Register all blueprints with the Flask app.
@@ -44,6 +45,8 @@ def register_all_blueprints(app, engine, agent_system=None, mcp_server=None,
         outgoing_connection_model: OutgoingConnection model class
         threat_analysis_model: ThreatAnalysis model class
         attacker_cluster_model: AttackerCluster model class
+        countermeasure_model: CountermeasureRecord model class
+        detection_rule_model: DetectionRuleRecord model class
         task_type: TaskType enum
         task_status: TaskStatus enum
         task_priority: TaskPriority enum
@@ -54,7 +57,8 @@ def register_all_blueprints(app, engine, agent_system=None, mcp_server=None,
     init_honeypot_routes(engine, honeypot_session_model, honeypot_flow_model)
     init_database_routes(
         engine, network_node_model, web_access_model, analysis_session_model,
-        isp_model, outgoing_connection_model, honeypot_session_model, honeypot_flow_model
+        isp_model, outgoing_connection_model, honeypot_session_model, honeypot_flow_model,
+        threat_analysis_model, detection_rule_model, countermeasure_model
     )
     init_llm_routes(engine)
     init_vector_routes(engine)

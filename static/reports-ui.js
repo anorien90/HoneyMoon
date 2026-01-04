@@ -29,7 +29,9 @@ async function fetchReports() {
     const threats = res.data.threats || [];
     reportsCache = threats.map(threat => ({
       id: threat.id,
-      session_id: threat.session_id,
+      // Use source_id for session_id (ThreatAnalysis model uses source_id, not session_id)
+      session_id: threat.source_id,
+      source_type: threat.source_type,
       threat_type: threat.threat_type,
       severity: threat.severity,
       analyzed_at: threat.analyzed_at,
@@ -41,6 +43,40 @@ async function fetchReports() {
     return reportsCache;
   } catch (err) {
     console.error('Error fetching reports:', err);
+    return [];
+  }
+}
+
+async function searchReports(query) {
+  if (!query?.trim()) {
+    // If no query, return all reports
+    return fetchReports();
+  }
+  
+  try {
+    // Use the new db/search endpoint for threat analyses
+    const res = await apiGet(`/api/v1/db/search?type=threat&q=${encodeURIComponent(query.trim())}&limit=100`);
+    if (!res.ok) {
+      console.error('Failed to search reports:', res.error);
+      return [];
+    }
+    
+    const threats = res.data.results || [];
+    reportsCache = threats.map(threat => ({
+      id: threat.id,
+      session_id: threat.source_id,
+      source_type: threat.source_type,
+      threat_type: threat.threat_type,
+      severity: threat.severity,
+      analyzed_at: threat.analyzed_at,
+      source_ip: threat.source_ip,
+      summary: threat.summary,
+      report_available: !!threat.formal_report
+    }));
+    
+    return reportsCache;
+  } catch (err) {
+    console.error('Error searching reports:', err);
     return [];
   }
 }
@@ -109,11 +145,30 @@ function renderReportsList(reports) {
     const div = document.createElement('div');
     div.className = 'py-2 border-b clickable report-row';
     div.dataset.reportId = report.id;
-    div.dataset.sessionId = report.session_id;
+    // Only set session_id if it exists and source_type is 'session'
+    if (report.session_id && report.source_type === 'session') {
+      div.dataset.sessionId = report.session_id;
+    }
+    div.dataset.sourceType = report.source_type || '';
+    div.dataset.sourceIp = report.source_ip || '';
     
     const severityBadge = getSeverityBadge(report.severity);
     const time = report.analyzed_at ? new Date(report.analyzed_at).toLocaleString() : '';
     const reportIcon = report.report_available ? '✅' : '📄';
+    
+    // Display source info based on source_type
+    let sourceInfo = '';
+    if (report.source_type === 'session' && report.session_id) {
+      sourceInfo = `Session ${report.session_id}`;
+    } else if (report.source_type === 'node' && report.source_ip) {
+      sourceInfo = `Node ${report.source_ip}`;
+    } else if (report.source_type === 'access') {
+      sourceInfo = `Access ${report.source_ip || ''}`;
+    } else if (report.source_type === 'connection') {
+      sourceInfo = 'Connection Analysis';
+    } else {
+      sourceInfo = report.source_ip ? `IP: ${report.source_ip}` : '—';
+    }
     
     div.innerHTML = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -121,7 +176,7 @@ function renderReportsList(reports) {
           ${reportIcon} ${severityBadge}
           <span>${escapeHtml(report.threat_type || 'Unknown')}</span>
         </div>
-        <span class="muted small">Session ${report.session_id || '—'}</span>
+        <span class="muted small">${escapeHtml(sourceInfo)}</span>
       </div>
       <div class="muted small">${escapeHtml(report.summary?.substring(0, 100) || '')}${report.summary?.length > 100 ? '...' : ''}</div>
       <div class="muted small">${time} • ${escapeHtml(report.source_ip || '—')}</div>
@@ -266,6 +321,39 @@ function setupEventHandlers() {
   // Refresh reports button
   $('refreshReportsBtn')?.addEventListener('click', refreshReportsList);
   
+  // Search reports button and input
+  $('searchReportsBtn')?.addEventListener('click', async () => {
+    const query = $('searchReportsQuery')?.value?.trim();
+    ui.setLoading(true, 'Searching reports...');
+    try {
+      const reports = await searchReports(query);
+      ui.setLoading(false);
+      renderReportsList(reports);
+      ui.toast(reports.length ? `Found ${reports.length} report(s)` : 'No reports found');
+    } catch (err) {
+      ui.setLoading(false);
+      console.error('Error searching reports:', err);
+      ui.toast('Search failed');
+    }
+  });
+  
+  $('searchReportsQuery')?.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      const query = $('searchReportsQuery')?.value?.trim();
+      ui.setLoading(true, 'Searching reports...');
+      try {
+        const reports = await searchReports(query);
+        ui.setLoading(false);
+        renderReportsList(reports);
+        ui.toast(reports.length ? `Found ${reports.length} report(s)` : 'No reports found');
+      } catch (err) {
+        ui.setLoading(false);
+        console.error('Error searching reports:', err);
+        ui.toast('Search failed');
+      }
+    }
+  });
+  
   // Export all reports
   $('exportAllReportsBtn')?.addEventListener('click', async () => {
     await exportReports(reportsCache);
@@ -277,17 +365,23 @@ function setupEventHandlers() {
     await exportReports(recentReports);
   });
   
-  // Report row click handler - view report
+  // Report row click handler - view report based on source type
   document.addEventListener('click', async (e) => {
     const reportRow = e.target.closest('.report-row');
-    if (reportRow?.dataset.sessionId) {
-      const sessionId = parseInt(reportRow.dataset.sessionId, 10);
+    if (!reportRow) return;
+    
+    const sourceType = reportRow.dataset.sourceType;
+    const sessionId = reportRow.dataset.sessionId ? parseInt(reportRow.dataset.sessionId, 10) : null;
+    const sourceIp = reportRow.dataset.sourceIp;
+    
+    ui.setLoading(true, 'Loading report...');
+    
+    try {
+      let res;
       
-      // Fetch and display the report (cached on backend, so efficient)
-      ui.setLoading(true, 'Loading report...');
-      
-      try {
-        const res = await apiPost('/api/v1/llm/formal_report', { session_id: sessionId }, { timeout: 180000 });
+      // Generate report based on source type
+      if (sourceType === 'session' && sessionId) {
+        res = await apiPost('/api/v1/llm/formal_report', { session_id: sessionId }, { timeout: 180000 });
         ui.setLoading(false);
         
         if (!res.ok) {
@@ -295,14 +389,60 @@ function setupEventHandlers() {
           return;
         }
         
-        // Import and show the report modal
         const { showFormalReportModal } = await import('./analysis-ui.js');
         showFormalReportModal(res.data, sessionId);
-      } catch (err) {
+      } else if (sourceType === 'node' && sourceIp) {
+        // Check if honeypotApi.generateNodeReport is available
+        if (!honeypotApi.generateNodeReport) {
+          ui.setLoading(false);
+          ui.toast('Node report generation not available');
+          return;
+        }
+        res = await honeypotApi.generateNodeReport(sourceIp);
         ui.setLoading(false);
-        console.error('Failed to load report:', err);
-        ui.toast('Failed to load report');
+        
+        if (!res.ok) {
+          ui.toast(res.error || 'Failed to load node report');
+          return;
+        }
+        
+        showNodeReportModal(res.data, sourceIp);
+      } else if (sourceType === 'access' && sourceIp) {
+        // Check if honeypotApi.generateHttpReport is available
+        if (!honeypotApi.generateHttpReport) {
+          ui.setLoading(false);
+          ui.toast('HTTP report generation not available');
+          return;
+        }
+        res = await honeypotApi.generateHttpReport(sourceIp, 100);
+        ui.setLoading(false);
+        
+        if (!res.ok) {
+          ui.toast(res.error || 'Failed to load HTTP report');
+          return;
+        }
+        
+        showHttpReportModal(res.data, sourceIp);
+      } else if (sessionId) {
+        // Fallback: try to generate session report if session_id exists
+        res = await apiPost('/api/v1/llm/formal_report', { session_id: sessionId }, { timeout: 180000 });
+        ui.setLoading(false);
+        
+        if (!res.ok) {
+          ui.toast(res.error || 'Failed to load report');
+          return;
+        }
+        
+        const { showFormalReportModal } = await import('./analysis-ui.js');
+        showFormalReportModal(res.data, sessionId);
+      } else {
+        ui.setLoading(false);
+        ui.toast('Unable to determine report source');
       }
+    } catch (err) {
+      ui.setLoading(false);
+      console.error('Failed to load report:', err);
+      ui.toast('Failed to load report');
     }
   });
 }

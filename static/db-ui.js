@@ -6,6 +6,7 @@ import * as ui from './ui.js';
 import * as mapModule from './map.js';
 import * as honeypotApi from './honeypot.js';
 import { updateMarkerCount } from './state.js';
+import { escapeHtml } from './util.js';
 
 const DB_PANEL_ID = 'dbResultsDatabase';
 const refreshMarkerCount = () => updateMarkerCount(() => mapModule.getMarkerCount ? mapModule.getMarkerCount() : 0);
@@ -296,6 +297,57 @@ export async function viewNodeDetail(ip) {
         });
         btn.style.cursor = 'pointer';
       });
+
+      // Threat analysis view buttons
+      const threatBtns = modal.querySelectorAll('[data-action="view-threat"]');
+      threatBtns.forEach(btn => {
+        const threatDataEncoded = btn.getAttribute('data-threat');
+        if (!threatDataEncoded) return;
+        btn.addEventListener('click', () => {
+          try {
+            const threatData = JSON.parse(decodeURIComponent(threatDataEncoded));
+            viewThreatDetail(threatData);
+          } catch (e) {
+            console.error('Error parsing threat data:', e);
+            ui.toast('Failed to load threat analysis');
+          }
+        });
+        btn.style.cursor = 'pointer';
+      });
+
+      // Detection rule view buttons
+      const ruleBtns = modal.querySelectorAll('[data-action="view-rule"]');
+      ruleBtns.forEach(btn => {
+        const ruleDataEncoded = btn.getAttribute('data-rule');
+        if (!ruleDataEncoded) return;
+        btn.addEventListener('click', () => {
+          try {
+            const ruleData = JSON.parse(decodeURIComponent(ruleDataEncoded));
+            viewDetectionRuleDetail(ruleData);
+          } catch (e) {
+            console.error('Error parsing rule data:', e);
+            ui.toast('Failed to load detection rule');
+          }
+        });
+        btn.style.cursor = 'pointer';
+      });
+
+      // Countermeasure view buttons
+      const cmBtns = modal.querySelectorAll('[data-action="view-countermeasure"]');
+      cmBtns.forEach(btn => {
+        const cmDataEncoded = btn.getAttribute('data-cm');
+        if (!cmDataEncoded) return;
+        btn.addEventListener('click', () => {
+          try {
+            const cmData = JSON.parse(decodeURIComponent(cmDataEncoded));
+            viewCountermeasureDetail(cmData);
+          } catch (e) {
+            console.error('Error parsing countermeasure data:', e);
+            ui.toast('Failed to load countermeasure');
+          }
+        });
+        btn.style.cursor = 'pointer';
+      });
     }, 120);
 
     if (data.node && data.node.latitude != null && data.node.longitude != null) {
@@ -316,29 +368,109 @@ function renderNodeHtml(data) {
   const accesses = data.recent_accesses || [];
   const analyses = data.analyses || [];
   const sessions = data.honeypot_sessions || [];
+  const threatAnalyses = data.threat_analyses || [];
+  const detectionRules = data.detection_rules || [];
+  const countermeasures = data.countermeasures || [];
 
-  let html = `<div class="font-medium">Node ${node.ip || '—'}</div>
-              <div class="mt-1 text-xs muted">Host: ${node.hostname || '—'} • Org: ${(node.organization_obj && node. organization_obj.name) || node.organization || '—'}</div>
+  let html = `<div class="font-medium">Node ${escapeHtml(node.ip || '—')}</div>
+              <div class="mt-1 text-xs muted">Host: ${escapeHtml(node.hostname || '—')} • Org: ${escapeHtml((node.organization_obj && node.organization_obj.name) || node.organization || '—')}</div>
               <div class="mt-2">
-                <strong>Location</strong><div class="text-xs muted">${node.city || ''} ${node.country || ''} ${node.latitude && node.longitude ? `• ${node.latitude}, ${node.longitude}` : ''}</div>
+                <strong>Location</strong><div class="text-xs muted">${escapeHtml(node.city || '')} ${escapeHtml(node.country || '')} ${node.latitude && node.longitude ? `• ${node.latitude}, ${node.longitude}` : ''}</div>
               </div>
               <div class="mt-2">
-                <strong>ASN / ISP</strong><div class="text-xs muted">${node.asn || node.isp || '—'}</div>
+                <strong>ASN / ISP</strong><div class="text-xs muted">${escapeHtml(node.asn || node.isp || '—')}</div>
               </div>`;
 
   const reg = (node.organization_obj && node.organization_obj.extra_data && node.organization_obj.extra_data.company_search) ||
               (node.extra_data && node.extra_data.company_search);
   if (reg) {
-    html += `<div class="mt-2"><strong>Company registry</strong><div class="text-xs muted">${(reg.matched_name || reg.name) || ''} ${reg.company_number ?  ' • ' + reg.company_number : ''} ${reg.company_url ? `<a href="${reg.company_url}" target="_blank" rel="noopener noreferrer">view</a>` : ''}</div></div>`;
+    html += `<div class="mt-2"><strong>Company registry</strong><div class="text-xs muted">${escapeHtml((reg.matched_name || reg.name) || '')} ${reg.company_number ? ' • ' + escapeHtml(reg.company_number) : ''} ${reg.company_url ? `<a href="${escapeHtml(reg.company_url)}" target="_blank" rel="noopener noreferrer">view</a>` : ''}</div></div>`;
   }
 
+  // Threat Analyses section
+  html += `<div class="mt-3"><strong>🔍 Threat Analyses (${threatAnalyses.length})</strong>`;
+  if (!threatAnalyses.length) {
+    html += `<div class="text-xs muted">No threat analyses for this IP</div>`;
+  } else {
+    html += '<div class="mt-1 small">';
+    threatAnalyses.forEach(t => {
+      const severityColors = {
+        critical: '#dc2626',
+        high: '#ea580c',
+        medium: '#ca8a04',
+        low: '#16a34a',
+        info: '#2563eb'
+      };
+      const severityColor = severityColors[(t.severity || '').toLowerCase()] || '#6b7280';
+      const threatDataEncoded = encodeURIComponent(JSON.stringify(t));
+      html += `<div class="py-1 border-b" style="border-left: 3px solid ${severityColor}; padding-left: 0.5rem;">
+               <div class="font-medium">${escapeHtml(t.threat_type || 'Unknown Threat')}</div>
+               <div class="text-xs muted">${t.analyzed_at || ''} • Severity: <span style="color: ${severityColor};">${escapeHtml(t.severity || 'unknown')}</span></div>
+               <div class="text-xs muted mt-1">${escapeHtml((t.summary || '').substring(0, 150))}${(t.summary || '').length > 150 ? '...' : ''}</div>
+               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-threat" data-threat='${threatDataEncoded}'>View Analysis</button></div>
+               </div>`;
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Detection Rules section
+  html += `<div class="mt-3"><strong>🛡️ Detection Rules (${detectionRules.length})</strong>`;
+  if (!detectionRules.length) {
+    html += `<div class="text-xs muted">No detection rules generated for this IP</div>`;
+  } else {
+    html += '<div class="mt-1 small">';
+    detectionRules.slice(0, 10).forEach(r => {
+      const ruleDataEncoded = encodeURIComponent(JSON.stringify(r));
+      html += `<div class="py-1 border-b">
+               <div class="font-medium">${escapeHtml(r.name || 'Detection Rule')}</div>
+               <div class="text-xs muted">${escapeHtml(r.rule_type || '')} • ${r.created_at || ''}</div>
+               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-rule" data-rule='${ruleDataEncoded}'>View Rule</button></div>
+               </div>`;
+    });
+    if (detectionRules.length > 10) {
+      html += `<div class="text-xs muted">...and ${detectionRules.length - 10} more rules</div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  // Countermeasures section
+  html += `<div class="mt-3"><strong>⚔️ Countermeasures (${countermeasures.length})</strong>`;
+  if (!countermeasures.length) {
+    html += `<div class="text-xs muted">No countermeasures recorded for this IP</div>`;
+  } else {
+    html += '<div class="mt-1 small">';
+    countermeasures.slice(0, 5).forEach(c => {
+      const statusColors = {
+        planned: '#f59e0b',
+        approved: '#3b82f6',
+        executing: '#8b5cf6',
+        completed: '#16a34a',
+        failed: '#dc2626'
+      };
+      const statusColor = statusColors[(c.status || '').toLowerCase()] || '#6b7280';
+      const cmDataEncoded = encodeURIComponent(JSON.stringify(c));
+      html += `<div class="py-1 border-b">
+               <div class="font-medium">${escapeHtml(c.name || 'Countermeasure')}</div>
+               <div class="text-xs muted">Status: <span style="color: ${statusColor};">${escapeHtml(c.status || 'unknown')}</span> • ${c.created_at || ''}</div>
+               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-countermeasure" data-cm='${cmDataEncoded}'>View Details</button></div>
+               </div>`;
+    });
+    if (countermeasures.length > 5) {
+      html += `<div class="text-xs muted">...and ${countermeasures.length - 5} more countermeasures</div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
   html += `<div class="mt-3"><strong>Recent Accesses (${accesses.length})</strong>`;
-  if (! accesses.length) {
+  if (!accesses.length) {
     html += `<div class="text-xs muted">No recent accesses</div>`;
   } else {
     html += '<div class="mt-1 small">';
     accesses.slice(0, 50).forEach(a => {
-      html += `<div class="border-b py-1"><div class="font-medium">${a.timestamp || ''} • ${a.method || ''} ${a.path || ''} <span class="muted">[${a.status || ''}]</span></div><div class="muted text-xs">${a. http_user_agent || ''}</div></div>`;
+      html += `<div class="border-b py-1"><div class="font-medium">${escapeHtml(a.timestamp || '')} • ${escapeHtml(a.method || '')} ${escapeHtml(a.path || '')} <span class="muted">[${escapeHtml(a.status || '')}]</span></div><div class="muted text-xs">${escapeHtml(a.http_user_agent || '')}</div></div>`;
     });
     html += '</div>';
   }
@@ -350,7 +482,7 @@ function renderNodeHtml(data) {
     html += '<div class="mt-1 small">';
     analyses.forEach(a => {
       const sessEncoded = encodeURIComponent(JSON.stringify(a));
-      html += `<div class="py-1 border-b"><div><strong>Analysis ${a.id}</strong> • ${a.timestamp || ''} • ${a.mode || ''} • ${a.hops ? a. hops.length : 0} hops</div>
+      html += `<div class="py-1 border-b"><div><strong>Analysis ${a.id}</strong> • ${escapeHtml(a.timestamp || '')} • ${escapeHtml(a.mode || '')} • ${a.hops ? a.hops.length : 0} hops</div>
                <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="plot-analysis" data-session='${sessEncoded}'>Plot hops on map</button></div></div>`;
     });
     html += '</div>';
@@ -362,8 +494,8 @@ function renderNodeHtml(data) {
   else {
     html += '<div class="mt-1 small">';
     sessions.forEach(s => {
-      html += `<div class="py-1 border-b"><div class="font-medium">Session ${s.id} — ${s.src_ip || ''} ${s.username ? ' • ' + s.username : ''}</div>
-               <div class="muted text-xs">${s. start_ts || ''} ${s.end_ts ? ' • ' + s.end_ts :  ''}</div>
+      html += `<div class="py-1 border-b"><div class="font-medium">Session ${s.id} — ${escapeHtml(s.src_ip || '')} ${s.username ? ' • ' + escapeHtml(s.username) : ''}</div>
+               <div class="muted text-xs">${escapeHtml(s.start_ts || '')} ${s.end_ts ? ' • ' + escapeHtml(s.end_ts) : ''}</div>
                <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-honeypot" data-id="${s.id}">View session</button></div></div>`;
     });
     html += '</div>';
