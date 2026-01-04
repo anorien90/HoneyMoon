@@ -506,6 +506,75 @@ class MCPServer:
                 }
             }
         ))
+        
+        # Node and HTTP report tools
+        self._register_tool(MCPTool(
+            name="generate_node_report",
+            description="Generate a formal intelligence report for a network node including all activity.",
+            category=ToolCategory.ANALYSIS,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "ip": {"type": "string", "description": "IP address of the node"}
+                },
+                "required": ["ip"]
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="generate_http_report",
+            description="Generate a report analyzing HTTP activity patterns.",
+            category=ToolCategory.ANALYSIS,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "ip": {"type": "string", "description": "IP address to filter by (optional)"},
+                    "limit": {"type": "integer", "default": 100, "description": "Maximum accesses to include"}
+                }
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="get_detection_rules",
+            description="Get stored detection rules from the database.",
+            category=ToolCategory.INVESTIGATION,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "source_type": {"type": "string", "description": "Filter by source type (session, node, access)"},
+                    "rule_type": {"type": "string", "description": "Filter by rule type (sigma, firewall, yara, cowrie)"},
+                    "limit": {"type": "integer", "default": 100, "description": "Maximum results"}
+                }
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="save_detection_rules",
+            description="Save generated detection rules to the database for persistent learning.",
+            category=ToolCategory.COUNTERMEASURE,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "integer", "description": "Session ID the rules were generated from"},
+                    "rules_data": {"type": "object", "description": "Detection rules data from LLM"}
+                },
+                "required": ["session_id", "rules_data"]
+            }
+        ))
+        
+        self._register_tool(MCPTool(
+            name="save_countermeasures",
+            description="Save countermeasure recommendations to the database for tracking.",
+            category=ToolCategory.COUNTERMEASURE,
+            parameters={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "integer", "description": "Session ID"},
+                    "countermeasures_data": {"type": "object", "description": "Countermeasure data from LLM"}
+                },
+                "required": ["session_id", "countermeasures_data"]
+            }
+        ))
     
     def _register_tool(self, tool: MCPTool):
         """Register a tool with the MCP server."""
@@ -662,9 +731,12 @@ class MCPServer:
             }
         
         elif name == "search_similar_threats":
+            query = params.get("query")
+            if not query:
+                return {"error": "Query parameter is required", "results": []}
             return {
                 "results": self.engine.search_similar_threats(
-                    query=params["query"],
+                    query=query,
                     limit=params.get("limit", 10)
                 )
             }
@@ -829,6 +901,38 @@ class MCPServer:
         
         elif name == "reindex_nodes":
             return self.engine.reindex_all_nodes(limit=params.get("limit"))
+        
+        # Node and HTTP report tools
+        elif name == "generate_node_report":
+            return self.engine.generate_node_report(params["ip"])
+        
+        elif name == "generate_http_report":
+            return self.engine.generate_http_activity_report(
+                ip=params.get("ip"),
+                limit=params.get("limit", 100)
+            )
+        
+        # Detection rules and countermeasures persistence
+        elif name == "get_detection_rules":
+            return {
+                "rules": self.engine.get_detection_rules(
+                    source_type=params.get("source_type"),
+                    rule_type=params.get("rule_type"),
+                    limit=params.get("limit", 100)
+                )
+            }
+        
+        elif name == "save_detection_rules":
+            return self.engine.save_detection_rules(
+                params["session_id"],
+                params["rules_data"]
+            )
+        
+        elif name == "save_countermeasures":
+            return self.engine.save_countermeasures(
+                params["session_id"],
+                params["countermeasures_data"]
+            )
         
         return {"error": f"Tool implementation not found: {name}"}
     

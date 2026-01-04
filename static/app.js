@@ -12,6 +12,7 @@ import * as liveView from './live-view.js';
 import * as agentUI from './agent-ui.js';
 import * as analysisUI from './analysis-ui.js';
 import * as reportsUI from './reports-ui.js';
+import * as chatUI from './chat-ui.js';
 import {
   applySavedInputs,
   getState,
@@ -742,6 +743,7 @@ async function init() {
     agentUI.initAgentUI();
     analysisUI.initAnalysisUI();
     reportsUI.initReportsUI();
+    chatUI.initChatUI();
     applySavedInputs({
       ipInput: elements.ipInput(),
       maxttlInput: elements.maxttl(),

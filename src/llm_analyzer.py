@@ -1280,3 +1280,209 @@ Generate rules in JSON format:
             "raw_rules": response,
             "parse_error": True
         }
+
+    def generate_node_report(
+        self,
+        node: Dict[str, Any],
+        accesses: List[Dict[str, Any]],
+        honeypot_sessions: List[Dict[str, Any]],
+        threat_analyses: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Generate a formal report for a network node including all activity.
+        
+        Args:
+            node: Node data dictionary
+            accesses: List of web accesses from this node
+            honeypot_sessions: List of honeypot sessions from this node
+            threat_analyses: List of existing threat analyses for this node
+            
+        Returns:
+            Node intelligence report
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "generated": False}
+        
+        # Build context
+        context_parts = []
+        
+        context_parts.append("## NODE IDENTIFICATION")
+        context_parts.append(f"IP Address: {node.get('ip', 'unknown')}")
+        context_parts.append(f"Hostname: {node.get('hostname', 'unknown')}")
+        context_parts.append(f"Organization: {node.get('organization', 'unknown')}")
+        context_parts.append(f"ISP: {node.get('isp', 'unknown')}")
+        context_parts.append(f"ASN: {node.get('asn', 'unknown')}")
+        context_parts.append(f"Country: {node.get('country', 'unknown')}")
+        context_parts.append(f"City: {node.get('city', 'unknown')}")
+        context_parts.append(f"Is TOR Exit: {node.get('is_tor_exit', False)}")
+        context_parts.append(f"First Seen: {node.get('first_seen', 'unknown')}")
+        context_parts.append(f"Last Seen: {node.get('last_seen', 'unknown')}")
+        context_parts.append(f"Seen Count: {node.get('seen_count', 0)}")
+        
+        # HTTP Activity
+        if accesses:
+            context_parts.append(f"\n## HTTP ACTIVITY ({len(accesses)} requests)")
+            for acc in accesses[:30]:
+                context_parts.append(f"  - {acc.get('timestamp')} {acc.get('method', '')} {acc.get('path', '')} [{acc.get('status', '')}]")
+                if acc.get('http_user_agent'):
+                    context_parts.append(f"    UA: {acc['http_user_agent'][:100]}")
+        
+        # Honeypot Sessions
+        if honeypot_sessions:
+            context_parts.append(f"\n## HONEYPOT SESSIONS ({len(honeypot_sessions)} sessions)")
+            for sess in honeypot_sessions[:10]:
+                context_parts.append(f"  - Session {sess.get('id')}: {sess.get('start_ts')} - {sess.get('end_ts', 'ongoing')}")
+                context_parts.append(f"    Username: {sess.get('username', 'none')}, Auth: {sess.get('auth_success', 'unknown')}")
+        
+        # Existing Threat Analyses
+        if threat_analyses:
+            context_parts.append(f"\n## EXISTING THREAT ANALYSES ({len(threat_analyses)} analyses)")
+            for threat in threat_analyses[:5]:
+                context_parts.append(f"  - {threat.get('threat_type', 'unknown')} [{threat.get('severity', 'unknown')}] - {threat.get('summary', '')[:100]}")
+        
+        context = "\n".join(context_parts)
+        
+        system_prompt = """You are a cybersecurity threat intelligence analyst preparing a comprehensive node intelligence report.
+Analyze the provided data to assess the threat level and provide actionable intelligence."""
+        
+        prompt = f"""Generate a comprehensive intelligence report for this network node.
+
+NODE DATA:
+{context}
+
+Generate a report with these sections (use JSON format):
+- summary: Executive summary of the node's activity and threat level
+- threat_assessment: Object with threat_level (critical/high/medium/low/benign), confidence (0-1), reasoning
+- activity_patterns: List of observed activity patterns
+- behavioral_indicators: List of suspicious behaviors
+- attribution_analysis: Object with organization_assessment, geographic_analysis, infrastructure_type
+- historical_context: Summary of historical activity
+- recommendations: List of recommended actions
+- iocs: Object with network_iocs, behavioral_iocs
+- mitre_tactics: List of relevant MITRE ATT&CK tactics
+- mitre_techniques: List of relevant MITRE ATT&CK techniques
+- related_threats: List of related threat types
+
+Respond with a properly formatted JSON object."""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["generated"] = True
+            result["generated_at"] = datetime.now(timezone.utc).isoformat()
+            result["node_ip"] = node.get('ip')
+            result["format"] = "node_intelligence_report"
+            return result
+        
+        return {
+            "generated": True,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "node_ip": node.get('ip'),
+            "format": "node_intelligence_report",
+            "raw_report": response,
+            "parse_error": True
+        }
+
+    def generate_http_activity_report(
+        self,
+        accesses: List[Dict[str, Any]],
+        node: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate a report analyzing HTTP activity patterns.
+        
+        Args:
+            accesses: List of web access records
+            node: Optional node data for context
+            
+        Returns:
+            HTTP activity analysis report
+        """
+        if not self.is_available():
+            return {"error": "LLM not available", "generated": False}
+        
+        # Build context
+        context_parts = []
+        
+        if node:
+            context_parts.append("## SOURCE NODE")
+            context_parts.append(f"IP: {node.get('ip', 'unknown')}")
+            context_parts.append(f"Organization: {node.get('organization', 'unknown')}")
+            context_parts.append(f"Country: {node.get('country', 'unknown')}")
+        
+        context_parts.append(f"\n## HTTP REQUESTS ({len(accesses)} total)")
+        
+        # Analyze request patterns
+        methods = {}
+        paths = {}
+        status_codes = {}
+        user_agents = {}
+        
+        for acc in accesses:
+            method = acc.get('method', 'unknown')
+            methods[method] = methods.get(method, 0) + 1
+            
+            path = acc.get('path', 'unknown')
+            paths[path] = paths.get(path, 0) + 1
+            
+            status = str(acc.get('status', 'unknown'))
+            status_codes[status] = status_codes.get(status, 0) + 1
+            
+            ua = acc.get('http_user_agent', 'unknown')[:50]
+            user_agents[ua] = user_agents.get(ua, 0) + 1
+        
+        context_parts.append(f"\nMethod Distribution: {json.dumps(methods)}")
+        context_parts.append(f"Status Code Distribution: {json.dumps(status_codes)}")
+        context_parts.append(f"Top Paths: {json.dumps(dict(sorted(paths.items(), key=lambda x: -x[1])[:20]))}")
+        context_parts.append(f"User Agents: {json.dumps(dict(sorted(user_agents.items(), key=lambda x: -x[1])[:10]))}")
+        
+        # Sample requests
+        context_parts.append("\n## SAMPLE REQUESTS")
+        for acc in accesses[:20]:
+            context_parts.append(f"  {acc.get('timestamp')} {acc.get('method', '')} {acc.get('path', '')} [{acc.get('status', '')}]")
+            context_parts.append(f"    UA: {acc.get('http_user_agent', '')[:80]}")
+        
+        context = "\n".join(context_parts)
+        
+        system_prompt = """You are a web security analyst examining HTTP traffic patterns for suspicious activity.
+Identify potential attacks, vulnerabilities being probed, and suspicious patterns."""
+        
+        prompt = f"""Analyze this HTTP activity and generate a security assessment report.
+
+HTTP ACTIVITY DATA:
+{context}
+
+Generate a report with these sections (use JSON format):
+- summary: Executive summary of the HTTP activity
+- threat_assessment: Object with threat_level (critical/high/medium/low/benign), confidence (0-1), reasoning
+- attack_patterns: List of identified attack patterns (e.g., SQL injection attempts, path traversal, scanner activity)
+- scanner_detection: Object with is_scanner (bool), scanner_type (if detected), evidence
+- vulnerability_probes: List of vulnerabilities being probed
+- anomalies: List of anomalous behaviors
+- suspicious_paths: List of paths that warrant investigation
+- suspicious_user_agents: List of concerning user agents
+- recommendations: List of recommended security actions
+- blocking_rules: List of suggested firewall/WAF rules
+- mitre_techniques: List of relevant MITRE ATT&CK techniques
+
+Respond with a properly formatted JSON object."""
+        
+        response = self._generate(prompt, system_prompt)
+        result = self._parse_json_response(response)
+        
+        if result:
+            result["generated"] = True
+            result["generated_at"] = datetime.now(timezone.utc).isoformat()
+            result["access_count"] = len(accesses)
+            result["format"] = "http_activity_report"
+            return result
+        
+        return {
+            "generated": True,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "access_count": len(accesses),
+            "format": "http_activity_report",
+            "raw_report": response,
+            "parse_error": True
+        }
