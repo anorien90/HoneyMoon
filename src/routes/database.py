@@ -396,16 +396,19 @@ def db_node():
     except Exception:
         detection_rules = []
 
-    # Get countermeasures for threat analyses associated with this IP
+    # Get countermeasures for this IP
+    # First try to get via threat analyses, then check if there are any linked to sessions from this IP
     countermeasures = []
     try:
-        if _CountermeasureRecord is not None and threat_analyses:
-            threat_ids = [t.get('id') for t in threat_analyses if t.get('id')]
-            if threat_ids:
-                rows = _engine.db.query(_CountermeasureRecord).filter(
-                    _CountermeasureRecord.threat_analysis_id.in_(threat_ids)
-                ).order_by(_CountermeasureRecord.created_at.desc()).limit(limit).all()
-                countermeasures = [r.dict() for r in rows]
+        if _CountermeasureRecord is not None:
+            # Get countermeasures via threat analyses
+            if threat_analyses:
+                threat_ids = [t.get('id') for t in threat_analyses if t.get('id')]
+                if threat_ids:
+                    rows = _engine.db.query(_CountermeasureRecord).filter(
+                        _CountermeasureRecord.threat_analysis_id.in_(threat_ids)
+                    ).order_by(_CountermeasureRecord.created_at.desc()).limit(limit).all()
+                    countermeasures = [r.dict() for r in rows]
     except Exception:
         countermeasures = []
 

@@ -301,17 +301,14 @@ export async function viewNodeDetail(ip) {
       // Threat analysis view buttons
       const threatBtns = modal.querySelectorAll('[data-action="view-threat"]');
       threatBtns.forEach(btn => {
-        const id = btn.getAttribute('data-id');
-        if (!id) return;
-        btn.addEventListener('click', async () => {
+        const threatDataEncoded = btn.getAttribute('data-threat');
+        if (!threatDataEncoded) return;
+        btn.addEventListener('click', () => {
           try {
-            const threatRes = await honeypotApi.getThreat(id);
-            if (threatRes.ok && threatRes.data?.threat) {
-              viewThreatDetail(threatRes.data.threat);
-            } else {
-              ui.toast('Failed to load threat analysis');
-            }
+            const threatData = JSON.parse(decodeURIComponent(threatDataEncoded));
+            viewThreatDetail(threatData);
           } catch (e) {
+            console.error('Error parsing threat data:', e);
             ui.toast('Failed to load threat analysis');
           }
         });
@@ -321,17 +318,14 @@ export async function viewNodeDetail(ip) {
       // Detection rule view buttons
       const ruleBtns = modal.querySelectorAll('[data-action="view-rule"]');
       ruleBtns.forEach(btn => {
-        const id = btn.getAttribute('data-id');
-        if (!id) return;
-        btn.addEventListener('click', async () => {
+        const ruleDataEncoded = btn.getAttribute('data-rule');
+        if (!ruleDataEncoded) return;
+        btn.addEventListener('click', () => {
           try {
-            const ruleRes = await apiGet(`/api/v1/db/search?type=detection_rule&q=${id}&limit=1`);
-            if (ruleRes.ok && ruleRes.data?.results?.length) {
-              viewDetectionRuleDetail(ruleRes.data.results[0]);
-            } else {
-              ui.toast('Failed to load detection rule');
-            }
+            const ruleData = JSON.parse(decodeURIComponent(ruleDataEncoded));
+            viewDetectionRuleDetail(ruleData);
           } catch (e) {
+            console.error('Error parsing rule data:', e);
             ui.toast('Failed to load detection rule');
           }
         });
@@ -341,17 +335,14 @@ export async function viewNodeDetail(ip) {
       // Countermeasure view buttons
       const cmBtns = modal.querySelectorAll('[data-action="view-countermeasure"]');
       cmBtns.forEach(btn => {
-        const id = btn.getAttribute('data-id');
-        if (!id) return;
-        btn.addEventListener('click', async () => {
+        const cmDataEncoded = btn.getAttribute('data-cm');
+        if (!cmDataEncoded) return;
+        btn.addEventListener('click', () => {
           try {
-            const cmRes = await apiGet(`/api/v1/db/search?type=countermeasure&q=${id}&limit=1`);
-            if (cmRes.ok && cmRes.data?.results?.length) {
-              viewCountermeasureDetail(cmRes.data.results[0]);
-            } else {
-              ui.toast('Failed to load countermeasure');
-            }
+            const cmData = JSON.parse(decodeURIComponent(cmDataEncoded));
+            viewCountermeasureDetail(cmData);
           } catch (e) {
+            console.error('Error parsing countermeasure data:', e);
             ui.toast('Failed to load countermeasure');
           }
         });
@@ -411,11 +402,12 @@ function renderNodeHtml(data) {
         info: '#2563eb'
       };
       const severityColor = severityColors[(t.severity || '').toLowerCase()] || '#6b7280';
+      const threatDataEncoded = encodeURIComponent(JSON.stringify(t));
       html += `<div class="py-1 border-b" style="border-left: 3px solid ${severityColor}; padding-left: 0.5rem;">
                <div class="font-medium">${escapeHtml(t.threat_type || 'Unknown Threat')}</div>
                <div class="text-xs muted">${t.analyzed_at || ''} • Severity: <span style="color: ${severityColor};">${escapeHtml(t.severity || 'unknown')}</span></div>
                <div class="text-xs muted mt-1">${escapeHtml((t.summary || '').substring(0, 150))}${(t.summary || '').length > 150 ? '...' : ''}</div>
-               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-threat" data-id="${t.id}">View Analysis</button></div>
+               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-threat" data-threat='${threatDataEncoded}'>View Analysis</button></div>
                </div>`;
     });
     html += '</div>';
@@ -429,10 +421,11 @@ function renderNodeHtml(data) {
   } else {
     html += '<div class="mt-1 small">';
     detectionRules.slice(0, 10).forEach(r => {
+      const ruleDataEncoded = encodeURIComponent(JSON.stringify(r));
       html += `<div class="py-1 border-b">
                <div class="font-medium">${escapeHtml(r.name || 'Detection Rule')}</div>
                <div class="text-xs muted">${escapeHtml(r.rule_type || '')} • ${r.created_at || ''}</div>
-               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-rule" data-id="${r.id}">View Rule</button></div>
+               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-rule" data-rule='${ruleDataEncoded}'>View Rule</button></div>
                </div>`;
     });
     if (detectionRules.length > 10) {
@@ -457,10 +450,11 @@ function renderNodeHtml(data) {
         failed: '#dc2626'
       };
       const statusColor = statusColors[(c.status || '').toLowerCase()] || '#6b7280';
+      const cmDataEncoded = encodeURIComponent(JSON.stringify(c));
       html += `<div class="py-1 border-b">
                <div class="font-medium">${escapeHtml(c.name || 'Countermeasure')}</div>
                <div class="text-xs muted">Status: <span style="color: ${statusColor};">${escapeHtml(c.status || 'unknown')}</span> • ${c.created_at || ''}</div>
-               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-countermeasure" data-id="${c.id}">View Details</button></div>
+               <div class="mt-1"><button class="border rounded px-2 py-1 small" data-action="view-countermeasure" data-cm='${cmDataEncoded}'>View Details</button></div>
                </div>`;
     });
     if (countermeasures.length > 5) {

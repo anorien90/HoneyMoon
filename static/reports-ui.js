@@ -392,6 +392,12 @@ function setupEventHandlers() {
         const { showFormalReportModal } = await import('./analysis-ui.js');
         showFormalReportModal(res.data, sessionId);
       } else if (sourceType === 'node' && sourceIp) {
+        // Check if honeypotApi.generateNodeReport is available
+        if (!honeypotApi.generateNodeReport) {
+          ui.setLoading(false);
+          ui.toast('Node report generation not available');
+          return;
+        }
         res = await honeypotApi.generateNodeReport(sourceIp);
         ui.setLoading(false);
         
@@ -402,6 +408,12 @@ function setupEventHandlers() {
         
         showNodeReportModal(res.data, sourceIp);
       } else if (sourceType === 'access' && sourceIp) {
+        // Check if honeypotApi.generateHttpReport is available
+        if (!honeypotApi.generateHttpReport) {
+          ui.setLoading(false);
+          ui.toast('HTTP report generation not available');
+          return;
+        }
         res = await honeypotApi.generateHttpReport(sourceIp, 100);
         ui.setLoading(false);
         
