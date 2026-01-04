@@ -485,8 +485,11 @@ function showTaskDetailsModal(task) {
   let resultHtml = '';
   if (task.response_text) {
     // Format the natural language response with markdown-like formatting
+    // First escape HTML to prevent XSS
     let formatted = escapeHtml(task.response_text);
-    formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // Apply markdown-style bold formatting (safe after escaping since ** becomes &ast;&ast; if from user input)
+    // Only match escaped asterisks pattern from controlled server responses
+    formatted = formatted.replace(/\*\*([^*&<>]+)\*\*/g, '<strong>$1</strong>');
     formatted = formatted.replace(/\n/g, '<br>');
     resultHtml = `
       <div class="task-response" style="background: var(--glass); padding: 12px; border-radius: var(--radius); margin-bottom: 12px;">
@@ -777,14 +780,19 @@ export function showNaturalLanguageTaskModal(prefillText = '') {
     // Import and show chat modal from chat-ui
     import('./chat-ui.js').then(module => {
       module.showChatModal();
-      // Pre-fill the chat input if we have a request
-      setTimeout(() => {
-        const chatInput = document.getElementById('chatInput');
-        if (chatInput && request) {
-          chatInput.value = request;
-          chatInput.focus();
-        }
-      }, 200);
+      // Pre-fill the chat input if we have a request - poll for element availability
+      if (request) {
+        const waitForChatInput = (attempts = 0) => {
+          const chatInput = document.getElementById('chatInput');
+          if (chatInput) {
+            chatInput.value = request;
+            chatInput.focus();
+          } else if (attempts < 10) {
+            requestAnimationFrame(() => waitForChatInput(attempts + 1));
+          }
+        };
+        requestAnimationFrame(waitForChatInput);
+      }
     });
   });
   

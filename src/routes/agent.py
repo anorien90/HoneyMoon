@@ -641,7 +641,7 @@ def agent_create_natural_task():
             }), 400
         
         # Apply priority override if provided
-        if priority_override and _TaskPriority:
+        if priority_override and _TaskPriority is not None:
             priority_map = {
                 'low': _TaskPriority.LOW,
                 'normal': _TaskPriority.NORMAL,

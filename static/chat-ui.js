@@ -725,7 +725,6 @@ function renderQuickActionsFromResponse(actions) {
   actions.slice(0, 5).forEach(action => {
     const btn = document.createElement('button');
     btn.className = 'quick-action-btn';
-    btn.style.cssText = 'display: flex; align-items: center; gap: 4px; padding: 6px 10px; font-size: 11px; background: var(--accent); color: white; border: none; border-radius: var(--radius); cursor: pointer;';
     btn.innerHTML = escapeHtml(action.label);
     btn.title = `Execute ${action.tool}`;
     btn.dataset.tool = action.tool;
@@ -1235,6 +1234,24 @@ export function showChatModal() {
         background: var(--accent);
         color: white;
         border-color: var(--accent);
+      }
+      
+      .quick-action-btn {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 10px;
+        font-size: 11px;
+        background: var(--accent);
+        color: white;
+        border: none;
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      
+      .quick-action-btn:hover {
+        background: var(--accent-hover, #4f46e5);
       }
       
       .quick-commands {
