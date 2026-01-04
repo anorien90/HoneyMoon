@@ -297,6 +297,66 @@ export async function viewNodeDetail(ip) {
         });
         btn.style.cursor = 'pointer';
       });
+
+      // Threat analysis view buttons
+      const threatBtns = modal.querySelectorAll('[data-action="view-threat"]');
+      threatBtns.forEach(btn => {
+        const id = btn.getAttribute('data-id');
+        if (!id) return;
+        btn.addEventListener('click', async () => {
+          try {
+            const threatRes = await honeypotApi.getThreat(id);
+            if (threatRes.ok && threatRes.data?.threat) {
+              viewThreatDetail(threatRes.data.threat);
+            } else {
+              ui.toast('Failed to load threat analysis');
+            }
+          } catch (e) {
+            ui.toast('Failed to load threat analysis');
+          }
+        });
+        btn.style.cursor = 'pointer';
+      });
+
+      // Detection rule view buttons
+      const ruleBtns = modal.querySelectorAll('[data-action="view-rule"]');
+      ruleBtns.forEach(btn => {
+        const id = btn.getAttribute('data-id');
+        if (!id) return;
+        btn.addEventListener('click', async () => {
+          try {
+            const ruleRes = await apiGet(`/api/v1/db/search?type=detection_rule&q=${id}&limit=1`);
+            if (ruleRes.ok && ruleRes.data?.results?.length) {
+              viewDetectionRuleDetail(ruleRes.data.results[0]);
+            } else {
+              ui.toast('Failed to load detection rule');
+            }
+          } catch (e) {
+            ui.toast('Failed to load detection rule');
+          }
+        });
+        btn.style.cursor = 'pointer';
+      });
+
+      // Countermeasure view buttons
+      const cmBtns = modal.querySelectorAll('[data-action="view-countermeasure"]');
+      cmBtns.forEach(btn => {
+        const id = btn.getAttribute('data-id');
+        if (!id) return;
+        btn.addEventListener('click', async () => {
+          try {
+            const cmRes = await apiGet(`/api/v1/db/search?type=countermeasure&q=${id}&limit=1`);
+            if (cmRes.ok && cmRes.data?.results?.length) {
+              viewCountermeasureDetail(cmRes.data.results[0]);
+            } else {
+              ui.toast('Failed to load countermeasure');
+            }
+          } catch (e) {
+            ui.toast('Failed to load countermeasure');
+          }
+        });
+        btn.style.cursor = 'pointer';
+      });
     }, 120);
 
     if (data.node && data.node.latitude != null && data.node.longitude != null) {

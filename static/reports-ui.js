@@ -47,6 +47,40 @@ async function fetchReports() {
   }
 }
 
+async function searchReports(query) {
+  if (!query?.trim()) {
+    // If no query, return all reports
+    return fetchReports();
+  }
+  
+  try {
+    // Use the new db/search endpoint for threat analyses
+    const res = await apiGet(`/api/v1/db/search?type=threat&q=${encodeURIComponent(query.trim())}&limit=100`);
+    if (!res.ok) {
+      console.error('Failed to search reports:', res.error);
+      return [];
+    }
+    
+    const threats = res.data.results || [];
+    reportsCache = threats.map(threat => ({
+      id: threat.id,
+      session_id: threat.source_id,
+      source_type: threat.source_type,
+      threat_type: threat.threat_type,
+      severity: threat.severity,
+      analyzed_at: threat.analyzed_at,
+      source_ip: threat.source_ip,
+      summary: threat.summary,
+      report_available: !!threat.formal_report
+    }));
+    
+    return reportsCache;
+  } catch (err) {
+    console.error('Error searching reports:', err);
+    return [];
+  }
+}
+
 async function generateReportForSession(sessionId) {
   if (!sessionId) {
     ui.toast('Provide a session ID');
@@ -286,6 +320,39 @@ function setupEventHandlers() {
   
   // Refresh reports button
   $('refreshReportsBtn')?.addEventListener('click', refreshReportsList);
+  
+  // Search reports button and input
+  $('searchReportsBtn')?.addEventListener('click', async () => {
+    const query = $('searchReportsQuery')?.value?.trim();
+    ui.setLoading(true, 'Searching reports...');
+    try {
+      const reports = await searchReports(query);
+      ui.setLoading(false);
+      renderReportsList(reports);
+      ui.toast(reports.length ? `Found ${reports.length} report(s)` : 'No reports found');
+    } catch (err) {
+      ui.setLoading(false);
+      console.error('Error searching reports:', err);
+      ui.toast('Search failed');
+    }
+  });
+  
+  $('searchReportsQuery')?.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      const query = $('searchReportsQuery')?.value?.trim();
+      ui.setLoading(true, 'Searching reports...');
+      try {
+        const reports = await searchReports(query);
+        ui.setLoading(false);
+        renderReportsList(reports);
+        ui.toast(reports.length ? `Found ${reports.length} report(s)` : 'No reports found');
+      } catch (err) {
+        ui.setLoading(false);
+        console.error('Error searching reports:', err);
+        ui.toast('Search failed');
+      }
+    }
+  });
   
   // Export all reports
   $('exportAllReportsBtn')?.addEventListener('click', async () => {
