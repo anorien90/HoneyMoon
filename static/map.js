@@ -13,6 +13,24 @@ let isInitialized = false;
 const markerPool = [];
 const MAX_POOL_SIZE = 100;
 
+// Toggleable layers for different marker types
+let layerGroups = {
+  attackers: null,
+  outgoing: null,
+  paths: null,
+  nodes: null,
+  liveConnections: null
+};
+
+// Layer visibility state
+const layerVisibility = {
+  attackers: true,
+  outgoing: true,
+  paths: true,
+  nodes: true,
+  liveConnections: true
+};
+
 export function initMap() {
   if (isInitialized) return Promise.resolve();
   
@@ -45,7 +63,14 @@ export function initMap() {
           updateWhenZooming: false
         }).addTo(map);
         
+        // Initialize layer groups
         arcsLayer = L.layerGroup().addTo(map);
+        layerGroups.paths = arcsLayer;
+        layerGroups.attackers = L.layerGroup().addTo(map);
+        layerGroups.outgoing = L.layerGroup().addTo(map);
+        layerGroups.nodes = L.layerGroup().addTo(map);
+        layerGroups.liveConnections = L.layerGroup().addTo(map);
+        
         isInitialized = true;
         
         // Delayed resize for proper initialization
@@ -75,6 +100,37 @@ function emitSelect(node) {
   });
 }
 
+// Toggle layer visibility
+export function toggleLayer(layerName, visible = null) {
+  if (!map || !layerGroups[layerName]) return false;
+  
+  // If visible is null, toggle the current state
+  const newState = visible !== null ? visible : !layerVisibility[layerName];
+  layerVisibility[layerName] = newState;
+  
+  if (newState) {
+    if (!map.hasLayer(layerGroups[layerName])) {
+      layerGroups[layerName].addTo(map);
+    }
+  } else {
+    if (map.hasLayer(layerGroups[layerName])) {
+      map.removeLayer(layerGroups[layerName]);
+    }
+  }
+  
+  return newState;
+}
+
+// Get layer visibility state
+export function getLayerVisibility() {
+  return { ...layerVisibility };
+}
+
+// Get available layer names
+export function getLayerNames() {
+  return Object.keys(layerGroups);
+}
+
 export function clearMap() {
   if (!map) return false;
   
@@ -90,9 +146,12 @@ export function clearMap() {
   });
   markers = [];
   
-  if (arcsLayer) {
-    try { arcsLayer.clearLayers(); } catch (e) {}
-  }
+  // Clear all layer groups
+  Object.values(layerGroups).forEach(layer => {
+    if (layer) {
+      try { layer.clearLayers(); } catch (e) {}
+    }
+  });
   
   return true;
 }
@@ -188,6 +247,16 @@ export function addMarkerForNode(node, role = 'middle') {
   
   const style = MARKER_STYLES[role] || MARKER_STYLES.middle;
   
+  // Determine target layer group based on role
+  let targetLayer = layerGroups.nodes;
+  if (role === 'attacker' || role.startsWith('threat_')) {
+    targetLayer = layerGroups.attackers;
+  } else if (role === 'outgoing') {
+    targetLayer = layerGroups.outgoing;
+  } else if (role === 'live') {
+    targetLayer = layerGroups.liveConnections;
+  }
+  
   // Try to reuse marker from pool (from old version)
   let m = markerPool.pop();
   if (m) {
@@ -199,7 +268,12 @@ export function addMarkerForNode(node, role = 'middle') {
       fillOpacity: 0.95,
       weight: 1
     });
-    m.addTo(map);
+    // Add to appropriate layer
+    if (targetLayer) {
+      m.addTo(targetLayer);
+    } else {
+      m.addTo(map);
+    }
   } else {
     m = L.circleMarker([lat, lon], {
       radius: style.radius,
@@ -207,11 +281,18 @@ export function addMarkerForNode(node, role = 'middle') {
       fillColor: style.fill,
       fillOpacity: 0.95,
       weight: 1
-    }).addTo(map);
+    });
+    // Add to appropriate layer
+    if (targetLayer) {
+      m.addTo(targetLayer);
+    } else {
+      m.addTo(map);
+    }
   }
   
   m.nodeIp = node.ip;
   m._nodeData = node;
+  m._markerRole = role;  // Store role for layer group management
   
   try {
     m.bindPopup(formatPopup(node), { closeButton: true, autoPan: true });

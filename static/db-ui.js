@@ -30,6 +30,8 @@ function buildSearchForm() {
           <option value="outgoing">Outgoing Connections</option>
           <option value="threat">Threat Analyses</option>
           <option value="cluster">Attacker Clusters</option>
+          <option value="detection_rule">Detection Rules</option>
+          <option value="countermeasure">Countermeasures</option>
         </select>
         <input id="dbPanelQuery" type="text" placeholder="Search query (ip, hostname, org, id... )" class="flex-1 border rounded px-3 py-1" aria-label="Search query" />
         <label class="inline-flex items-center gap-2 small ml-2">
@@ -63,7 +65,7 @@ export async function runSearch() {
   const limit = parseInt(el('dbPanelLimit')?.value || '100', 10) || 100;
 
   // Some types don't require a search query
-  const requiresQuery = !['threat', 'cluster'].includes(type);
+  const requiresQuery = !['threat', 'cluster', 'detection_rule', 'countermeasure'].includes(type);
   if (requiresQuery && !q) return ui.toast('Enter a search term');
   
   if (q) ui.pushSearchHistory(q);
@@ -91,6 +93,20 @@ export async function runSearch() {
       if (res.ok && res.data?.clusters) {
         res.data.results = res.data.clusters;
       }
+    } else if (type === 'detection_rule') {
+      // List detection rules
+      const params = new URLSearchParams({ limit });
+      if (q) params.append('source_type', q);
+      res = await apiGet(`/api/v1/detection_rules?${params}`, { retries: 2 });
+      // Transform response to match expected format
+      if (res.ok && res.data?.rules) {
+        res.data.results = res.data.rules;
+      }
+    } else if (type === 'countermeasure') {
+      // List countermeasures by querying the database
+      const params = new URLSearchParams({ type: 'countermeasure', limit });
+      if (q) params.append('q', q);
+      res = await apiGet(`/api/v1/db/search?${params}`, { retries: 2 });
     } else {
       // Standard DB search
       res = await apiGet(`/api/v1/db/search?type=${encodeURIComponent(type)}&q=${encodeURIComponent(q)}&fuzzy=${fuzzy}&limit=${limit}`, { retries: 2 });
@@ -188,6 +204,19 @@ export function renderSearchResults(results, type) {
                        <div class="text-xs muted mt-1">${r.session_count || 0} sessions • ${r.created_at || ''}</div>`;
       row.addEventListener('click', () => viewClusterDetail(r));
       row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') viewClusterDetail(r); });
+    } else if (type === 'detection_rule') {
+      const ruleType = r.rule_type || 'Unknown';
+      const sourceType = r.source_type || 'session';
+      row.innerHTML = `<div class="font-medium">🛡️ ${ruleType}</div>
+                       <div class="text-xs muted mt-1">Session ${r.session_id || '—'} • ${sourceType} • ${r.created_at || ''}</div>`;
+      row.addEventListener('click', () => viewDetectionRuleDetail(r));
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') viewDetectionRuleDetail(r); });
+    } else if (type === 'countermeasure') {
+      const priority = r.priority || 'medium';
+      row.innerHTML = `<div class="font-medium">⚔️ Countermeasure ${r.id || ''}</div>
+                       <div class="text-xs muted mt-1">Session ${r.session_id || '—'} • Priority: ${priority} • ${r.created_at || ''}</div>`;
+      row.addEventListener('click', () => viewCountermeasureDetail(r));
+      row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') viewCountermeasureDetail(r); });
     } else {
       row.innerText = JSON.stringify(r);
     }
@@ -924,6 +953,210 @@ export async function findSimilarAttackers(ip) {
     ui.toast('Search failed');
     console.error('findSimilarAttackers error:', e);
   }
+}
+
+// Detection rule detail view
+export function viewDetectionRuleDetail(rule) {
+  if (!rule) return;
+  
+  let html = `<div class="detection-rule-detail" style="max-height: 70vh; overflow-y: auto;">
+    <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius);">
+      <div class="font-medium">🛡️ Detection Rule</div>
+      <div class="text-xs muted">Session ${rule.session_id || '—'} • ${rule.rule_type || 'Unknown'}</div>
+      ${rule.created_at ? `<div class="text-xs muted">Created: ${new Date(rule.created_at).toLocaleString()}</div>` : ''}
+    </div>`;
+  
+  // Detection Logic
+  if (rule.detection_logic) {
+    html += `<div class="mt-2"><strong>📋 Detection Strategy</strong><div class="text-sm mt-1" style="white-space: pre-wrap;">${rule.detection_logic}</div></div>`;
+  }
+  
+  // Sigma Rules
+  if (rule.sigma_rules?.length) {
+    html += `<div class="mt-3"><strong>📊 Sigma Rules</strong>`;
+    rule.sigma_rules.forEach((r, i) => {
+      html += `<details class="mt-1"><summary class="text-xs" style="cursor: pointer;">Rule ${i + 1}</summary>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">${typeof r === 'string' ? r : JSON.stringify(r, null, 2)}</pre>
+      </details>`;
+    });
+    html += `</div>`;
+  }
+  
+  // Firewall Rules
+  if (rule.firewall_rules?.length) {
+    html += `<div class="mt-3"><strong>🔥 Firewall Rules</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto;">${rule.firewall_rules.join('\n')}</pre>
+    </div>`;
+  }
+  
+  // YARA Rules
+  if (rule.yara_rules?.length) {
+    html += `<div class="mt-3"><strong>🔬 YARA Rules</strong>`;
+    rule.yara_rules.forEach((r, i) => {
+      html += `<details class="mt-1"><summary class="text-xs" style="cursor: pointer;">Rule ${i + 1}</summary>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem;">${r}</pre>
+      </details>`;
+    });
+    html += `</div>`;
+  }
+  
+  // Generic rules data
+  if (rule.rules_data) {
+    html += `<details class="mt-3"><summary class="text-xs" style="cursor: pointer;">View Full Rule Data</summary>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem; max-height: 300px;">${JSON.stringify(rule.rules_data, null, 2)}</pre>
+    </details>`;
+  }
+  
+  html += `
+    <div class="mt-3 pt-3 border-t" style="display: flex; gap: 0.5rem;">
+      <button id="downloadRuleBtn" class="small" style="background: #3b82f6; color: white; padding: 6px 12px;">💾 Download</button>
+      <button id="copyRuleBtn" class="small" style="background: #6b7280; color: white; padding: 6px 12px;">📋 Copy</button>
+    </div>
+  </div>`;
+  
+  ui.showModal({
+    title: `🛡️ Detection Rule - Session ${rule.session_id || ''}`,
+    html,
+    allowPin: true,
+    onPin: () => ui.addPinnedCard(`Rule ${rule.id || rule.session_id || ''}`, html),
+    onShow: () => {
+      document.getElementById('downloadRuleBtn')?.addEventListener('click', () => {
+        const dataStr = JSON.stringify(rule, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `detection-rule-${rule.id || rule.session_id || Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        ui.toast('Rule downloaded');
+      });
+      
+      document.getElementById('copyRuleBtn')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(JSON.stringify(rule, null, 2)).then(() => {
+          ui.toast('Rule copied to clipboard');
+        }).catch(err => {
+          console.error('Clipboard write failed:', err);
+          const reason = err.name === 'NotAllowedError' ? ' (permission denied)' : '';
+          ui.toast(`Copy failed${reason} - try selecting text manually`);
+        });
+      });
+    }
+  });
+}
+
+// Countermeasure detail view
+export function viewCountermeasureDetail(cm) {
+  if (!cm) return;
+  
+  const priorityColors = {
+    immediate: '#dc2626',
+    high: '#ea580c',
+    medium: '#ca8a04',
+    low: '#16a34a'
+  };
+  const priorityColor = priorityColors[cm.priority?.toLowerCase()] || '#6b7280';
+  
+  let html = `<div class="countermeasure-detail" style="max-height: 70vh; overflow-y: auto;">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; padding: 0.75rem; background: var(--glass); border-radius: var(--radius); border-left: 4px solid ${priorityColor};">
+      <div>
+        <div class="font-medium">⚔️ Countermeasure Recommendation</div>
+        <div class="text-xs muted">Session ${cm.session_id || '—'}</div>
+        ${cm.priority ? `<div class="text-xs mt-1">Priority: <span style="color: ${priorityColor}; font-weight: 600;">${cm.priority}</span></div>` : ''}
+        ${cm.created_at ? `<div class="text-xs muted">Created: ${new Date(cm.created_at).toLocaleString()}</div>` : ''}
+      </div>
+    </div>`;
+  
+  // Recommended Capability
+  if (cm.recommended_capability) {
+    html += `<div class="mt-2"><strong>🎯 Recommended Capability</strong>
+      <div class="text-sm mt-1 p-2 border rounded" style="background: var(--glass);">${cm.recommended_capability}</div>
+    </div>`;
+  }
+  
+  // Response Actions
+  if (cm.response_actions?.length) {
+    html += `<div class="mt-3"><strong>🎭 Response Actions</strong><div class="text-xs mt-1" style="display: flex; gap: 0.25rem; flex-wrap: wrap;">`;
+    cm.response_actions.forEach(action => {
+      html += `<span style="padding: 0.25rem 0.75rem; background: var(--glass); border: 1px solid var(--border); border-radius: 4px;">${action}</span>`;
+    });
+    html += `</div></div>`;
+  }
+  
+  // Recommendations
+  if (cm.recommendations) {
+    html += `<div class="mt-3"><strong>📝 Recommendations</strong>`;
+    if (Array.isArray(cm.recommendations)) {
+      html += `<ol class="text-xs mt-1" style="margin-left: 1rem;">`;
+      cm.recommendations.forEach(rec => {
+        html += `<li style="margin-bottom: 0.25rem;">${typeof rec === 'string' ? rec : JSON.stringify(rec)}</li>`;
+      });
+      html += `</ol>`;
+    } else {
+      html += `<div class="text-sm mt-1">${JSON.stringify(cm.recommendations)}</div>`;
+    }
+    html += `</div>`;
+  }
+  
+  // Implementation Steps
+  if (cm.implementation_steps?.length) {
+    html += `<div class="mt-3"><strong>📋 Implementation Steps</strong><ol class="text-xs mt-1" style="margin-left: 1rem;">`;
+    cm.implementation_steps.forEach(step => {
+      html += `<li style="margin-bottom: 0.25rem;">${step}</li>`;
+    });
+    html += `</ol></div>`;
+  }
+  
+  // Manhole Commands
+  if (cm.manhole_commands?.length) {
+    html += `<div class="mt-3"><strong>🔧 Manhole Commands</strong>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.75rem; overflow-x: auto;">${cm.manhole_commands.map(c => `>>> ${c}`).join('\n')}</pre>
+    </div>`;
+  }
+  
+  // Full data view
+  if (cm.countermeasures_data) {
+    html += `<details class="mt-3"><summary class="text-xs" style="cursor: pointer;">View Full Countermeasure Data</summary>
+      <pre style="background: #1e1e1e; color: #d4d4d4; padding: 0.75rem; border-radius: var(--radius); font-size: 0.7rem; overflow-x: auto; margin-top: 0.5rem; max-height: 300px;">${JSON.stringify(cm.countermeasures_data, null, 2)}</pre>
+    </details>`;
+  }
+  
+  html += `
+    <div class="mt-3 pt-3 border-t" style="display: flex; gap: 0.5rem;">
+      <button id="downloadCmBtn" class="small" style="background: #3b82f6; color: white; padding: 6px 12px;">💾 Download</button>
+      <button id="copyCmBtn" class="small" style="background: #6b7280; color: white; padding: 6px 12px;">📋 Copy</button>
+    </div>
+  </div>`;
+  
+  ui.showModal({
+    title: `⚔️ Countermeasure - Session ${cm.session_id || ''}`,
+    html,
+    allowPin: true,
+    onPin: () => ui.addPinnedCard(`CM ${cm.id || cm.session_id || ''}`, html),
+    onShow: () => {
+      document.getElementById('downloadCmBtn')?.addEventListener('click', () => {
+        const dataStr = JSON.stringify(cm, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `countermeasure-${cm.id || cm.session_id || Date.now()}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        ui.toast('Countermeasure downloaded');
+      });
+      
+      document.getElementById('copyCmBtn')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(JSON.stringify(cm, null, 2)).then(() => {
+          ui.toast('Countermeasure copied to clipboard');
+        }).catch(err => {
+          console.error('Clipboard write failed:', err);
+          const reason = err.name === 'NotAllowedError' ? ' (permission denied)' : '';
+          ui.toast(`Copy failed${reason} - try selecting text manually`);
+        });
+      });
+    }
+  });
 }
 
 export { runSearch as searchDB, getSeverityBadge };

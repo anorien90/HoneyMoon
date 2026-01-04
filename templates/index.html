@@ -106,7 +106,7 @@
             <div id="status" class="small muted">Ready</div>
             <div id="sessionSummary" class="small muted"></div>
           </div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
             <!-- Live view controls -->
             <button id="liveToggleBtn" class="small live-toggle" title="Toggle live view">⚪ Live</button>
             <div id="liveControls" class="hidden" style="display: flex; gap: 0.25rem; align-items: center;">
@@ -118,6 +118,23 @@
               <button id="liveRefreshBtn" class="small" title="Refresh live data">↻</button>
               <span class="small muted">(<span id="liveCount">0</span>)</span>
               <span id="liveStatus" class="small muted"></span>
+            </div>
+            <span class="live-divider" style="border-left: 1px solid var(--border); height: 16px; margin: 0 0.25rem;"></span>
+            <!-- Layer toggle controls -->
+            <div id="layerToggles" style="display: flex; gap: 0.25rem; align-items: center;">
+              <span class="small muted">Layers:</span>
+              <label class="small" style="display: flex; align-items: center; gap: 0.15rem;" title="Toggle attacker markers (red)">
+                <input id="toggleAttackers" type="checkbox" checked /> <span style="color: #dc2626;">●</span>
+              </label>
+              <label class="small" style="display: flex; align-items: center; gap: 0.15rem;" title="Toggle outgoing connection markers (green)">
+                <input id="toggleOutgoing" type="checkbox" checked /> <span style="color: #10b981;">●</span>
+              </label>
+              <label class="small" style="display: flex; align-items: center; gap: 0.15rem;" title="Toggle path lines">
+                <input id="togglePaths" type="checkbox" checked /> <span style="color: #ff7b00;">─</span>
+              </label>
+              <label class="small" style="display: flex; align-items: center; gap: 0.15rem;" title="Toggle node markers (orange)">
+                <input id="toggleNodes" type="checkbox" checked /> <span style="color: #ff7b00;">●</span>
+              </label>
             </div>
             <span class="live-divider" style="border-left: 1px solid var(--border); height: 16px; margin: 0 0.25rem;"></span>
             <!-- Existing controls -->

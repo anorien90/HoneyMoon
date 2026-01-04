@@ -690,6 +690,32 @@ function initMapSelection() {
 }
 
 // ============================================
+// MAP LAYER TOGGLES
+// ============================================
+
+function initMapLayerToggles() {
+  // Attacker layer toggle
+  $('toggleAttackers')?.addEventListener('change', (e) => {
+    mapModule.toggleLayer('attackers', e.target.checked);
+  });
+  
+  // Outgoing layer toggle
+  $('toggleOutgoing')?.addEventListener('change', (e) => {
+    mapModule.toggleLayer('outgoing', e.target.checked);
+  });
+  
+  // Paths layer toggle
+  $('togglePaths')?.addEventListener('change', (e) => {
+    mapModule.toggleLayer('paths', e.target.checked);
+  });
+  
+  // Nodes layer toggle
+  $('toggleNodes')?.addEventListener('change', (e) => {
+    mapModule.toggleLayer('nodes', e.target.checked);
+  });
+}
+
+// ============================================
 // AUTO REFRESH
 // ============================================
 
@@ -752,6 +778,7 @@ async function init() {
     
     initTabs();
     initMapSelection();
+    initMapLayerToggles();  // Initialize map layer toggles
     
     // Main buttons
     elements.locateBtn()?.addEventListener('click', locateIP);
